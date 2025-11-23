@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 
 // --- ASSETS CONFIGURATION ---
+// Ensure STinstaLOGO.png and STmascot.jpg are in your /public folder
 const ASSETS = {
   logo: "/STinstaLOGO.png",
   mascot: "/STmascot.jpg"
@@ -29,31 +30,33 @@ const getSavedStage = () => {
   return score ? parseInt(score, 10) : null;
 };
 
-// --- COMPONENT: TIME PICKER (NEW FEATURE) ---
+// --- HELPER: AUDIO UNLOCKER ---
+// Browsers block audio context until user interaction. We call this on any click.
+const unlockAudioContext = () => {
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  if (AudioContext) {
+    const ctx = new AudioContext();
+    if (ctx.state === 'suspended') ctx.resume();
+  }
+};
+
+// --- COMPONENT: TIME PICKER ---
 const TimePicker = ({ value, onChange }) => {
-  // Parse initial time (HH:MM) or default to current time
   const parseTime = (t) => {
     if (!t) {
       const now = new Date();
-      return { 
-        h: now.getHours() % 12 || 12, 
-        m: now.getMinutes(), 
-        ampm: now.getHours() >= 12 ? 'PM' : 'AM' 
-      };
+      return { h: now.getHours() % 12 || 12, m: now.getMinutes(), ampm: now.getHours() >= 12 ? 'PM' : 'AM' };
     }
     const [h24, m] = t.split(':').map(Number);
-    return {
-      h: h24 % 12 || 12,
-      m: m,
-      ampm: h24 >= 12 ? 'PM' : 'AM'
-    };
+    return { h: h24 % 12 || 12, m: m, ampm: h24 >= 12 ? 'PM' : 'AM' };
   };
 
   const [time, setTime] = useState(parseTime(value));
 
   useEffect(() => {
-    // Convert back to 24h format for parent component
     let h24 = time.ampm === 'PM' ? (time.h % 12) + 12 : time.h % 12;
+    if (time.ampm === 'PM' && time.h === 12) h24 = 12;
+    if (time.ampm === 'AM' && time.h === 12) h24 = 0;
     const str = `${h24.toString().padStart(2, '0')}:${time.m.toString().padStart(2, '0')}`;
     onChange(str);
   }, [time]);
@@ -74,27 +77,25 @@ const TimePicker = ({ value, onChange }) => {
     });
   };
 
-  const toggleAMPM = () => setTime(prev => ({ ...prev, ampm: prev.ampm === 'AM' ? 'PM' : 'AM' }));
-
   return (
-    <div className="flex items-center justify-center gap-2 bg-slate-950 p-4 rounded-2xl border border-slate-800">
+    <div className="flex items-center justify-center gap-2 bg-slate-950 p-4 rounded-2xl border border-slate-800 shadow-inner" onClick={unlockAudioContext}>
       {/* Hours */}
       <div className="flex flex-col items-center">
-        <button onClick={() => cycle('h', 12, 1)} className="p-2 text-slate-500 hover:text-cyan-400"><ChevronUp className="w-4 h-4"/></button>
-        <div className="text-3xl font-bold text-white w-16 text-center tabular-nums">{time.h.toString().padStart(2, '0')}</div>
-        <button onClick={() => cycleDown('h', 12, 1)} className="p-2 text-slate-500 hover:text-cyan-400"><ChevronDown className="w-4 h-4"/></button>
+        <button onClick={() => cycle('h', 12, 1)} className="p-2 text-slate-500 hover:text-cyan-400 active:scale-90 transition-transform"><ChevronUp className="w-5 h-5"/></button>
+        <div className="text-4xl font-bold text-white w-20 text-center tabular-nums font-mono">{time.h.toString().padStart(2, '0')}</div>
+        <button onClick={() => cycleDown('h', 12, 1)} className="p-2 text-slate-500 hover:text-cyan-400 active:scale-90 transition-transform"><ChevronDown className="w-5 h-5"/></button>
       </div>
-      <div className="text-3xl font-bold text-slate-600 mb-1">:</div>
+      <div className="text-4xl font-bold text-slate-600 mb-1 animate-pulse">:</div>
       {/* Minutes */}
       <div className="flex flex-col items-center">
-        <button onClick={() => cycle('m', 59)} className="p-2 text-slate-500 hover:text-cyan-400"><ChevronUp className="w-4 h-4"/></button>
-        <div className="text-3xl font-bold text-white w-16 text-center tabular-nums">{time.m.toString().padStart(2, '0')}</div>
-        <button onClick={() => cycleDown('m', 59)} className="p-2 text-slate-500 hover:text-cyan-400"><ChevronDown className="w-4 h-4"/></button>
+        <button onClick={() => cycle('m', 59)} className="p-2 text-slate-500 hover:text-cyan-400 active:scale-90 transition-transform"><ChevronUp className="w-5 h-5"/></button>
+        <div className="text-4xl font-bold text-white w-20 text-center tabular-nums font-mono">{time.m.toString().padStart(2, '0')}</div>
+        <button onClick={() => cycleDown('m', 59)} className="p-2 text-slate-500 hover:text-cyan-400 active:scale-90 transition-transform"><ChevronDown className="w-5 h-5"/></button>
       </div>
       {/* AM/PM */}
-      <div className="ml-2 flex flex-col gap-2">
-        <button onClick={toggleAMPM} className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${time.ampm === 'AM' ? 'bg-cyan-500 text-white' : 'bg-slate-800 text-slate-500'}`}>AM</button>
-        <button onClick={toggleAMPM} className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${time.ampm === 'PM' ? 'bg-purple-500 text-white' : 'bg-slate-800 text-slate-500'}`}>PM</button>
+      <div className="ml-4 flex flex-col gap-2">
+        <button onClick={() => setTime(p => ({...p, ampm: 'AM'}))} className={`text-xs font-bold px-4 py-2 rounded-xl transition-all ${time.ampm === 'AM' ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-500/20' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'}`}>AM</button>
+        <button onClick={() => setTime(p => ({...p, ampm: 'PM'}))} className={`text-xs font-bold px-4 py-2 rounded-xl transition-all ${time.ampm === 'PM' ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/20' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'}`}>PM</button>
       </div>
     </div>
   );
@@ -112,7 +113,7 @@ const NavBar = ({ activeTab, setActiveTab }) => (
 
 const NavBtn = ({ id, icon: Icon, label, active, set }) => (
   <button 
-    onClick={() => set(id)}
+    onClick={() => { set(id); unlockAudioContext(); }}
     className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition-all duration-300 ${
       active === id 
         ? 'text-cyan-400 bg-cyan-950/50 scale-110 shadow-[0_0_15px_rgba(34,211,238,0.3)]' 
@@ -226,7 +227,7 @@ const VoiceLabView = () => {
   };
 
   return (
-    <div className="p-6 space-y-6 pb-32 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="p-6 space-y-6 pb-32 animate-in fade-in slide-in-from-bottom-4 duration-500" onClick={unlockAudioContext}>
       <header className="flex flex-col gap-1">
         <h2 className="text-3xl font-bold text-white flex items-center gap-3">
           Voice Lab <span className="bg-cyan-500/20 text-cyan-400 text-[10px] px-2 py-1 rounded-full uppercase tracking-widest border border-cyan-500/30">Beta</span>
@@ -392,13 +393,15 @@ const LucyChatView = () => {
         finishResponse("I hear you. It takes strength to share that. I'm here with you every step of the way.");
         return;
       }
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${keyToUse}`, {
+      // Using standard gemini-1.5-flash for broader key compatibility
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${keyToUse}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ contents: [{ parts: [{ text: `You are Lucy, an empathetic AI addiction recovery companion. Be supportive, gentle, and concise. User: "${userText}"` }] }] })
       });
       const data = await response.json();
       finishResponse(data.candidates?.[0]?.content?.parts?.[0]?.text || "I'm here for you.");
     } catch (error) {
+      console.error(error);
       finishResponse("I'm having trouble connecting, but please know I'm here for you.");
     }
   };
@@ -418,12 +421,17 @@ const LucyChatView = () => {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-90px)] bg-slate-950">
+    <div className="flex flex-col h-[calc(100vh-90px)] bg-slate-950" onClick={unlockAudioContext}>
       <div className="p-4 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 sticky top-0 z-10 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-4">
           <div className="relative">
             <div className={`w-12 h-12 rounded-full p-[2px] ${isSpeaking ? 'animate-pulse bg-cyan-400' : 'bg-gradient-to-br from-cyan-400 to-purple-500'}`}>
-              <img src={ASSETS.mascot} className="w-full h-full rounded-full object-cover bg-slate-800" alt="Lucy" />
+              <img 
+                src={ASSETS.mascot} 
+                className="w-full h-full rounded-full object-cover bg-slate-800" 
+                alt="Lucy" 
+                onError={(e) => { e.target.onerror = null; e.target.style.display = 'none'; e.target.parentNode.classList.add('bg-cyan-500'); }}
+              />
             </div>
             {isSpeaking && (
               <div className="absolute -bottom-1 -right-1 bg-green-500 text-slate-900 rounded-full p-1 border-2 border-slate-900">
@@ -446,7 +454,7 @@ const LucyChatView = () => {
       <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar pb-4">
         {messages.map(msg => (
           <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-            {msg.sender === 'lucy' && <img src={ASSETS.mascot} className="w-8 h-8 rounded-full mr-2 self-end mb-1 border border-slate-700" />}
+            {msg.sender === 'lucy' && <img src={ASSETS.mascot} className="w-8 h-8 rounded-full mr-2 self-end mb-1 border border-slate-700" onError={(e) => e.target.style.display = 'none'} />}
             <div className={`max-w-[80%] p-4 rounded-2xl text-sm leading-relaxed shadow-md ${
               msg.sender === 'user' 
                 ? 'bg-gradient-to-br from-cyan-600 to-blue-600 text-white rounded-tr-none' 
@@ -458,7 +466,7 @@ const LucyChatView = () => {
         ))}
         {isThinking && (
           <div className="flex justify-start items-center gap-2 animate-in fade-in">
-            <img src={ASSETS.mascot} className="w-8 h-8 rounded-full border border-slate-700" />
+            <img src={ASSETS.mascot} className="w-8 h-8 rounded-full border border-slate-700" onError={(e) => e.target.style.display = 'none'} />
             <div className="bg-slate-800 px-4 py-3 rounded-2xl rounded-tl-none border border-slate-700 flex gap-1">
               <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce delay-0"></div>
               <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce delay-100"></div>
@@ -497,15 +505,13 @@ const RemindersView = () => {
   useEffect(() => {
     const interval = setInterval(() => {
       const now = new Date();
-      // Format time as HH:MM (24h) to match picker output
+      // Format time as HH:MM (24h)
       const h24 = now.getHours().toString().padStart(2, '0');
       const m = now.getMinutes().toString().padStart(2, '0');
       const currentTime = `${h24}:${m}`;
       
       alarms.forEach(a => { 
         if (a.isActive && a.time === currentTime && !ringingAlarm) {
-            // Check if seconds are 00 to avoid re-triggering same minute multiple times if closed quickly
-            // Or just rely on !ringingAlarm state
             triggerAlarm(a); 
         }
       });
@@ -538,7 +544,7 @@ const RemindersView = () => {
   const triggerAlarm = (alarm) => {
     setRingingAlarm(alarm);
     
-    // Fix for overlapping audio
+    // Fix overlapping audio
     if (audioPlayerRef.current) {
         audioPlayerRef.current.pause();
         audioPlayerRef.current.currentTime = 0;
@@ -550,42 +556,39 @@ const RemindersView = () => {
       audioPlayerRef.current.loop = true;
       audioPlayerRef.current.play().catch(console.error);
     } else {
-      // Store ID on window to robustly control the loop across closure scope
+      // Robust Loop for Speech Synthesis
       window.activeAlarmId = alarm.id;
-      
       const u = new SpeechSynthesisUtterance(alarm.text);
       u.rate = 0.9;
       
-      const speak = () => {
-        if (window.activeAlarmId !== alarm.id) return; // Stop if ID changed (stopped)
+      const speakLoop = () => {
+        if (window.activeAlarmId !== alarm.id) return; // Stop if ID changed
         window.speechSynthesis.speak(u);
         u.onend = () => {
             if (window.activeAlarmId === alarm.id) {
-                setTimeout(speak, 1000);
+                setTimeout(speakLoop, 1500); // 1.5s delay between loops
             }
         };
       };
-      speak();
+      speakLoop();
     }
   };
 
   const stopAlarm = () => {
-    // 1. Stop Audio Element
     if (audioPlayerRef.current) {
       audioPlayerRef.current.pause();
       audioPlayerRef.current.currentTime = 0;
     }
     
-    // 2. Stop Speech Synthesis Hard
-    window.activeAlarmId = null; // Kill the loop condition
-    window.speechSynthesis.cancel(); // Stop speaking immediately
+    // Hard Stop for Speech
+    window.activeAlarmId = null; 
+    window.speechSynthesis.cancel(); 
     
-    // 3. Clear UI
     setRingingAlarm(null);
   };
 
   return (
-    <div className="p-6 pb-32 space-y-8 animate-in slide-in-from-right duration-500">
+    <div className="p-6 pb-32 space-y-8 animate-in slide-in-from-right duration-500" onClick={unlockAudioContext}>
       <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-[2rem] p-8 border border-slate-700 shadow-2xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-48 h-48 bg-purple-500/10 rounded-full blur-3xl -mr-10 -mt-10"></div>
         <h2 className="text-xl font-bold mb-6 flex items-center gap-3 text-white relative z-10">
@@ -631,7 +634,12 @@ const RemindersView = () => {
             <div className="w-40 h-40 mx-auto mb-8 relative">
                <div className="absolute inset-0 bg-cyan-500/30 rounded-full animate-ping"></div>
                <div className="absolute inset-0 bg-purple-500/30 rounded-full animate-ping" style={{animationDelay: '0.5s'}}></div>
-               <img src={ASSETS.mascot} className="w-full h-full rounded-full border-4 border-slate-800 relative z-10 shadow-2xl bg-slate-800" alt="Lucy" />
+               <img 
+                 src={ASSETS.mascot} 
+                 className="w-full h-full rounded-full border-4 border-slate-800 relative z-10 shadow-2xl bg-slate-800 object-cover" 
+                 alt="Lucy" 
+                 onError={(e) => e.target.src = 'https://via.placeholder.com/150/3b82f6/ffffff?text=Lucy'} // Fallback if local image fails
+               />
             </div>
             <h2 className="text-7xl font-bold text-white tracking-tighter mb-2">{ringingAlarm.time}</h2>
             <div className="bg-slate-800/50 p-6 rounded-3xl border border-white/10 backdrop-blur-md mb-8">
@@ -670,7 +678,7 @@ const AssessmentView = ({ onComplete }) => {
   const getStageFromScore = (s) => s < 5 ? "Stage 1" : s < 10 ? "Stage 2" : s < 15 ? "Stage 3" : "Stage 4+";
 
   return (
-    <div className="p-6 pt-10 pb-32 animate-in fade-in">
+    <div className="p-6 pt-10 pb-32 animate-in fade-in" onClick={unlockAudioContext}>
       <div className="flex items-center gap-3 mb-8">
         <div className="w-12 h-12 bg-purple-500/20 rounded-2xl flex items-center justify-center">
             <Activity className="w-6 h-6 text-purple-400" />
@@ -744,7 +752,7 @@ const SobertoneApp = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-cyan-500/30 overflow-hidden">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-cyan-500/30 overflow-hidden" onClick={unlockAudioContext}>
       <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} onUpdate={refreshData} />
 
       {activeTab === 'home' && (
