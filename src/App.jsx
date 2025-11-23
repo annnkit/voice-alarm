@@ -12,9 +12,11 @@ const ASSETS = {
 };
 
 // --- CONFIGURATION & STORAGE ---
+const getCleanKey = (keyName) => (localStorage.getItem(keyName) || '').trim();
+
 const CONFIG = {
-  elevenLabsKey: localStorage.getItem('sobertone_el_key') || '',
-  geminiKey: localStorage.getItem('sobertone_gemini_key') || '',
+  elevenLabsKey: getCleanKey('sobertone_el_key'),
+  geminiKey: getCleanKey('sobertone_gemini_key'),
 };
 
 const getDaysSober = () => {
@@ -59,8 +61,16 @@ const useWakeLock = () => {
         console.log('Wake Lock error:', err);
       }
     };
+    // Re-request wake lock if visibility changes (user switches apps)
+    const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible') requestWakeLock();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     requestWakeLock();
-    return () => wakeLock?.release();
+    return () => {
+        wakeLock?.release();
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 };
 
@@ -127,7 +137,7 @@ const TimePicker = ({ value, onChange }) => {
 
 // --- COMPONENT: NAVIGATION BAR ---
 const NavBar = ({ activeTab, setActiveTab }) => (
-  <div className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-xl border-t border-white/10 p-2 pb-6 flex justify-around items-center z-50 safe-area-pb shadow-2xl">
+  <div className="fixed bottom-0 left-0 right-0 bg-slate-900/90 backdrop-blur-xl border-t border-white/10 p-2 pb-6 flex justify-around items-center z-50 safe-area-pb shadow-2xl">
     <NavBtn id="home" icon={Home} label="Home" active={activeTab} set={setActiveTab} />
     <NavBtn id="voice-lab" icon={Fingerprint} label="Voice Lab" active={activeTab} set={setActiveTab} />
     <NavBtn id="lucy" icon={MessageCircle} label="Lucy AI" active={activeTab} set={setActiveTab} />
@@ -158,15 +168,16 @@ const SettingsModal = ({ isOpen, onClose, onUpdate }) => {
   if (!isOpen) return null;
 
   const handleSave = () => {
-    localStorage.setItem('sobertone_el_key', elKey);
-    localStorage.setItem('sobertone_gemini_key', gKey);
+    // TRIM WHITESPACE - Crucial fix for mobile copy/paste
+    localStorage.setItem('sobertone_el_key', elKey.trim());
+    localStorage.setItem('sobertone_gemini_key', gKey.trim());
     localStorage.setItem('sobertone_start_date', soberDate);
     onUpdate(); 
     window.location.reload();
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-200 p-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200 p-4">
       <div className="bg-slate-900 p-6 rounded-3xl border border-slate-700 w-full max-w-sm space-y-6 shadow-2xl transform transition-all scale-100">
         <div className="flex justify-between items-center border-b border-slate-800 pb-4">
           <h2 className="text-xl font-bold text-white">SoberTone Engine</h2>
@@ -177,7 +188,7 @@ const SettingsModal = ({ isOpen, onClose, onUpdate }) => {
           <div className="bg-blue-500/10 p-3 rounded-lg border border-blue-500/20">
             <p className="text-xs text-blue-200 flex gap-2">
               <Info className="w-4 h-4 shrink-0" />
-              Enter keys here to enable Real AI & Voice features.
+              Enter keys here to enable Real AI & Voice.
             </p>
           </div>
 
@@ -195,7 +206,7 @@ const SettingsModal = ({ isOpen, onClose, onUpdate }) => {
 
           <div className="space-y-2">
             <label className="text-xs text-slate-500 font-bold uppercase tracking-wider flex items-center gap-2">
-              <Volume2 className="w-3 h-3" /> ElevenLabs API Key (Voice)
+              <Volume2 className="w-3 h-3" /> ElevenLabs API Key
             </label>
             <input 
               type="password" 
@@ -208,7 +219,7 @@ const SettingsModal = ({ isOpen, onClose, onUpdate }) => {
 
           <div className="space-y-2">
             <label className="text-xs text-slate-500 font-bold uppercase tracking-wider flex items-center gap-2">
-              <Brain className="w-3 h-3" /> Gemini API Key (Brain)
+              <Brain className="w-3 h-3" /> Gemini API Key
             </label>
             <input 
               type="password" 
@@ -224,7 +235,7 @@ const SettingsModal = ({ isOpen, onClose, onUpdate }) => {
           onClick={handleSave}
           className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold py-4 rounded-2xl shadow-lg shadow-cyan-900/20 transition-transform active:scale-95"
         >
-          Save & Update
+          Save & Restart App
         </button>
       </div>
     </div>
@@ -266,7 +277,7 @@ const VoiceLabView = () => {
       mediaRecorderRef.current.start();
       setIsRecording(true);
     } catch (err) {
-      alert("Microphone access needed.");
+      alert("Microphone access needed. Check browser settings.");
     }
   };
 
@@ -282,8 +293,7 @@ const VoiceLabView = () => {
       const url = URL.createObjectURL(audioBlob);
       new Audio(url).play();
     } else {
-      // Fallback demo sound if user refreshed page
-      alert("Preview unavailable after refresh in Demo mode.");
+      alert("Recording saved to memory. (Refresh clears it in demo mode)");
     }
   };
 
@@ -427,21 +437,14 @@ const LucyChatView = () => {
     window.speechSynthesis.speak(utterance);
   };
 
+  // AI LOGIC: ERROR REPORTING
   const generateAIResponse = async (userText) => {
     setIsThinking(true);
     try {
       const keyToUse = CONFIG.geminiKey;
-      
       if (!keyToUse) {
-        // Provide helpful fallback responses if no key
         await new Promise(resolve => setTimeout(resolve, 1500));
-        const responses = [
-            "I hear you. Since I'm in Demo Mode (no API key), I can only give limited responses, but I want you to know you matter.",
-            "That sounds important. Please add a Gemini API Key in Settings so I can fully understand and reply to you.",
-            "You are strong for sharing that. I am here for you."
-        ];
-        const randomResp = responses[Math.floor(Math.random() * responses.length)];
-        finishResponse(randomResp);
+        finishResponse("I can't connect to my brain. Please add a valid Gemini API Key in Settings.");
         return;
       }
 
@@ -450,13 +453,16 @@ const LucyChatView = () => {
         body: JSON.stringify({ contents: [{ parts: [{ text: `You are Lucy, an empathetic AI addiction recovery companion. Be supportive, gentle, and concise. User: "${userText}"` }] }] })
       });
       
-      if (!response.ok) throw new Error("API Error");
+      if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(`API Error ${response.status}: ${errorData.error?.message || response.statusText}`);
+      }
       
       const data = await response.json();
-      finishResponse(data.candidates?.[0]?.content?.parts?.[0]?.text || "I'm here for you.");
+      finishResponse(data.candidates?.[0]?.content?.parts?.[0]?.text || "I'm listening.");
     } catch (error) {
       console.error(error);
-      finishResponse("I'm having trouble connecting (check your API Key), but please know I'm here for you.");
+      finishResponse(`Connection Error: ${error.message}. Please check your API Key.`);
     }
   };
 
@@ -509,7 +515,7 @@ const LucyChatView = () => {
         {!CONFIG.geminiKey && (
             <div className="bg-yellow-500/10 border border-yellow-500/20 p-4 rounded-xl flex items-start gap-3 text-yellow-200 text-xs">
                 <AlertTriangle className="w-5 h-5 shrink-0" />
-                <p>Demo Mode: AI Brain is inactive. Add a free Gemini API Key in Settings to enable real conversations.</p>
+                <p>Demo Mode: AI Brain is inactive. Add a free Gemini API Key in Settings.</p>
             </div>
         )}
         {messages.map(msg => (
@@ -582,12 +588,18 @@ const RemindersView = () => {
   const generateAudio = async (text) => {
     if (CONFIG.elevenLabsKey) {
       try {
-        const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM`, {
+        // Added streaming optimization
+        const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM?optimize_streaming_latency=0`, {
           method: "POST", headers: { "xi-api-key": CONFIG.elevenLabsKey, "Content-Type": "application/json" },
           body: JSON.stringify({ text, model_id: "eleven_monolingual_v1" })
         });
+        if (!res.ok) throw new Error(`ElevenLabs Error ${res.status}`);
         return URL.createObjectURL(await res.blob());
-      } catch (e) { return null; }
+      } catch (e) { 
+        console.error(e);
+        alert(`Voice Gen Error: ${e.message}. Using System Voice.`);
+        return null; 
+      }
     }
     return null;
   };
@@ -603,56 +615,40 @@ const RemindersView = () => {
 
   const triggerAlarm = (alarm) => {
     setRingingAlarm(alarm);
-    
-    // Stop existing
-    if (audioPlayerRef.current) {
-        audioPlayerRef.current.pause();
-        audioPlayerRef.current.currentTime = 0;
-    }
+    if (audioPlayerRef.current) { audioPlayerRef.current.pause(); audioPlayerRef.current.currentTime = 0; }
     window.speechSynthesis.cancel();
     if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
 
     if (alarm.audioUrl) {
-      // Real Voice (ElevenLabs)
       audioPlayerRef.current = new Audio(alarm.audioUrl);
       audioPlayerRef.current.loop = true;
-      audioPlayerRef.current.play().catch(console.error);
+      audioPlayerRef.current.play().catch(e => {
+          console.error("Play blocked", e);
+          triggerSystemVoice(alarm);
+      });
     } else {
-      // Fallback Voice (System TTS) - Loop handled manually
-      window.activeAlarmId = alarm.id;
-      const u = new SpeechSynthesisUtterance(alarm.text);
-      u.rate = 0.9;
-      
-      const speakLoop = () => {
-        if (window.activeAlarmId !== alarm.id) return; 
-        window.speechSynthesis.speak(u);
-        u.onend = () => {
-            if (window.activeAlarmId === alarm.id) {
-                speechTimeoutRef.current = setTimeout(speakLoop, 1500); 
-            }
-        };
-      };
-      speakLoop();
+      triggerSystemVoice(alarm);
     }
   };
 
+  const triggerSystemVoice = (alarm) => {
+      window.activeAlarmId = alarm.id;
+      const u = new SpeechSynthesisUtterance(alarm.text);
+      u.rate = 0.9;
+      const speakLoop = () => {
+        if (window.activeAlarmId !== alarm.id) return; 
+        window.speechSynthesis.speak(u);
+        u.onend = () => { if (window.activeAlarmId === alarm.id) speechTimeoutRef.current = setTimeout(speakLoop, 1500); };
+      };
+      speakLoop();
+  };
+
   const stopAlarm = () => {
-    // Stop everything immediately
-    if (audioPlayerRef.current) {
-      audioPlayerRef.current.pause();
-      audioPlayerRef.current.currentTime = 0;
-    }
+    if (audioPlayerRef.current) { audioPlayerRef.current.pause(); audioPlayerRef.current.currentTime = 0; }
     window.activeAlarmId = null; 
     window.speechSynthesis.cancel(); 
     if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
-    
-    // Turn off alarm so it doesn't ring again this minute
-    if (ringingAlarm) {
-        setAlarms(prev => prev.map(a => 
-            a.id === ringingAlarm.id ? { ...a, isActive: false } : a
-        ));
-    }
-    
+    if (ringingAlarm) { setAlarms(prev => prev.map(a => a.id === ringingAlarm.id ? { ...a, isActive: false } : a)); }
     setRingingAlarm(null);
   };
 
