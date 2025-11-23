@@ -161,6 +161,7 @@ const SettingsModal = ({ isOpen, onClose, onUpdate }) => {
   if (!isOpen) return null;
 
   const handleSave = () => {
+    // TRIM WHITESPACE - Crucial fix for mobile copy/paste
     localStorage.setItem('sobertone_el_key', elKey.trim());
     localStorage.setItem('sobertone_gemini_key', gKey.trim());
     localStorage.setItem('sobertone_start_date', soberDate);
@@ -383,7 +384,7 @@ const LucyChatView = () => {
     window.speechSynthesis.speak(utterance);
   };
 
-  // AI LOGIC: USING GEMINI-PRO
+  // AI LOGIC: USING GEMINI 2.5 FLASH (Updated for your key)
   const generateAIResponse = async (userText) => {
     setIsThinking(true);
     try {
@@ -394,12 +395,22 @@ const LucyChatView = () => {
         return;
       }
 
-      // CHANGED TO GEMINI-PRO for maximum compatibility
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${keyToUse}`, {
+      // --- UPDATED MODEL NAME ---
+      // Use the exact model from your screenshot: gemini-2.5-flash-preview-09-2025
+      let response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${keyToUse}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ contents: [{ parts: [{ text: `You are Lucy, an empathetic AI addiction recovery companion. Be supportive, gentle, and concise. User: "${userText}"` }] }] })
       });
       
+      // Fallback: If 2.5 fails, try 1.5 Flash (Stable)
+      if (!response.ok) {
+          console.warn("Gemini 2.5 failed, trying 1.5 Flash...");
+          response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${keyToUse}`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ contents: [{ parts: [{ text: `You are Lucy, an empathetic AI addiction recovery companion. Be supportive, gentle, and concise. User: "${userText}"` }] }] })
+          });
+      }
+
       if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
           throw new Error(`API Error ${response.status}: ${errorData.error?.message || response.statusText}`);
