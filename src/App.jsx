@@ -1,437 +1,712 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, Square, Play, Trash2, Plus, Bell, Volume2, Clock, X, StopCircle, Check } from 'lucide-react';
+import { 
+  Mic, Square, Play, Trash2, Plus, Bell, Volume2, VolumeX, Clock, X, 
+  MessageCircle, Activity, Heart, Home, Settings, Check, ChevronRight, 
+  Sparkles, Brain, Loader, Fingerprint, ArrowRight, ShieldCheck, Info, Calendar
+} from 'lucide-react';
 
-const VoiceAlarmApp = () => {
-  // State for recordings and alarms
-  const [recordings, setRecordings] = useState([]);
-  const [alarms, setAlarms] = useState([]);
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingTime, setRecordingTime] = useState(0);
-  
-  // Form state for new alarm
-  const [newAlarmTime, setNewAlarmTime] = useState('');
-  const [selectedRecordingId, setSelectedRecordingId] = useState('');
-  const [alarmLabel, setAlarmLabel] = useState('');
-  
-  // Active alarm state (when an alarm is ringing)
-  const [ringingAlarm, setRingingAlarm] = useState(null);
+// --- ASSETS CONFIGURATION ---
+const ASSETS = {
+  logo: "/STinstaLOGO.png",
+  mascot: "/STmascot.jpg"
+};
 
-  // Refs
-  const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
-  const timerRef = useRef(null);
-  const audioPlayerRef = useRef(null); // To play the alarm sound
+// --- CONFIGURATION & STORAGE ---
+const CONFIG = {
+  elevenLabsKey: localStorage.getItem('sobertone_el_key') || '',
+  geminiKey: localStorage.getItem('sobertone_gemini_key') || '',
+};
 
-  // --- Recording Logic ---
+// Helper to calculate days sober
+const getDaysSober = () => {
+  const start = localStorage.getItem('sobertone_start_date');
+  if (!start) return 0;
+  const diff = new Date() - new Date(start);
+  return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
+};
 
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorderRef.current = new MediaRecorder(stream);
-      audioChunksRef.current = [];
+// Helper to get saved stage
+const getSavedStage = () => {
+  const score = localStorage.getItem('sobertone_stage_score');
+  return score ? parseInt(score, 10) : null;
+};
 
-      mediaRecorderRef.current.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
+// --- COMPONENT: NAVIGATION BAR ---
+const NavBar = ({ activeTab, setActiveTab }) => (
+  <div className="fixed bottom-0 left-0 right-0 bg-white/5 backdrop-blur-xl border-t border-white/10 p-2 pb-6 flex justify-around items-center z-50 safe-area-pb shadow-2xl">
+    <NavBtn id="home" icon={Home} label="Home" active={activeTab} set={setActiveTab} />
+    <NavBtn id="voice-lab" icon={Fingerprint} label="Voice Lab" active={activeTab} set={setActiveTab} />
+    <NavBtn id="lucy" icon={MessageCircle} label="Lucy AI" active={activeTab} set={setActiveTab} />
+    <NavBtn id="reminders" icon={Clock} label="Reminders" active={activeTab} set={setActiveTab} />
+  </div>
+);
 
-      mediaRecorderRef.current.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const newRecording = {
-          id: Date.now().toString(),
-          name: `Recording ${recordings.length + 1}`,
-          url: audioUrl,
-          blob: audioBlob,
-          duration: recordingTime,
-        };
-        setRecordings((prev) => [...prev, newRecording]);
-        // Select this new recording automatically if none selected
-        if (!selectedRecordingId) {
-          setSelectedRecordingId(newRecording.id);
-        }
-        setRecordingTime(0);
-        
-        // Stop all tracks to release microphone
-        stream.getTracks().forEach(track => track.stop());
-      };
+const NavBtn = ({ id, icon: Icon, label, active, set }) => (
+  <button 
+    onClick={() => set(id)}
+    className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition-all duration-300 ${
+      active === id 
+        ? 'text-cyan-400 bg-cyan-950/50 scale-110 shadow-[0_0_15px_rgba(34,211,238,0.3)]' 
+        : 'text-slate-400 hover:text-slate-200'
+    }`}
+  >
+    <Icon className="w-6 h-6" strokeWidth={active === id ? 2.5 : 2} />
+    <span className="text-[10px] font-medium tracking-wide">{label}</span>
+  </button>
+);
 
-      mediaRecorderRef.current.start();
-      setIsRecording(true);
-      
-      // Timer for recording duration
-      timerRef.current = setInterval(() => {
-        setRecordingTime(prev => prev + 1);
-      }, 1000);
+// --- COMPONENT: SETTINGS MODAL ---
+const SettingsModal = ({ isOpen, onClose, onUpdate }) => {
+  const [elKey, setElKey] = useState(CONFIG.elevenLabsKey);
+  const [gKey, setGKey] = useState(CONFIG.geminiKey);
+  const [soberDate, setSoberDate] = useState(localStorage.getItem('sobertone_start_date') || new Date().toISOString().split('T')[0]);
 
-    } catch (err) {
-      console.error("Error accessing microphone:", err);
-      alert("Could not access microphone. Please ensure you have granted permission.");
-    }
-  };
+  if (!isOpen) return null;
 
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      clearInterval(timerRef.current);
-    }
-  };
-
-  const deleteRecording = (id) => {
-    setRecordings(prev => prev.filter(rec => rec.id !== id));
-    if (selectedRecordingId === id) setSelectedRecordingId('');
-  };
-
-  const playPreview = (url) => {
-    const audio = new Audio(url);
-    audio.play();
-  };
-
-  // --- Alarm Logic ---
-
-  const addAlarm = () => {
-    if (!newAlarmTime || !selectedRecordingId) return;
-
-    const newAlarm = {
-      id: Date.now().toString(),
-      time: newAlarmTime,
-      recordingId: selectedRecordingId,
-      label: alarmLabel || 'Alarm',
-      isActive: true,
-    };
-
-    setAlarms([...alarms, newAlarm]);
-    setAlarmLabel('');
-    // Keep time and recording selected for convenience, or clear them if preferred
-  };
-
-  const toggleAlarm = (id) => {
-    setAlarms(alarms.map(alarm => 
-      alarm.id === id ? { ...alarm, isActive: !alarm.isActive } : alarm
-    ));
-  };
-
-  const deleteAlarm = (id) => {
-    setAlarms(alarms.filter(alarm => alarm.id !== id));
-  };
-
-  // Check for alarms every second
-  useEffect(() => {
-    const checkInterval = setInterval(() => {
-      const now = new Date();
-      const currentTimeString = now.toTimeString().slice(0, 5); // "HH:MM" format
-
-      alarms.forEach(alarm => {
-        if (alarm.isActive && alarm.time === currentTimeString && !ringingAlarm) {
-          triggerAlarm(alarm);
-        }
-      });
-    }, 1000);
-
-    return () => clearInterval(checkInterval);
-  }, [alarms, ringingAlarm]);
-
-  const triggerAlarm = (alarm) => {
-    // Find the recording
-    const recording = recordings.find(r => r.id === alarm.recordingId);
-    if (recording) {
-      setRingingAlarm({ ...alarm, recordingName: recording.name });
-      
-      // Loop the audio
-      if (audioPlayerRef.current) {
-        audioPlayerRef.current.pause();
-      }
-      audioPlayerRef.current = new Audio(recording.url);
-      audioPlayerRef.current.loop = true;
-      
-      // Handle playback promise to catch autoplay errors
-      const playPromise = audioPlayerRef.current.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(error => {
-          console.error("Auto-play was prevented:", error);
-          // In a real app, you might show a "Click to Play" UI here if blocked
-        });
-      }
-    }
-  };
-
-  const stopAlarm = () => {
-    if (audioPlayerRef.current) {
-      audioPlayerRef.current.pause();
-      audioPlayerRef.current.currentTime = 0;
-    }
-    
-    // Deactivate the alarm that just rang so it doesn't ring again immediately this minute
-    if (ringingAlarm) {
-        setAlarms(prev => prev.map(a => 
-            a.id === ringingAlarm.id ? { ...a, isActive: false } : a
-        ));
-    }
-    setRingingAlarm(null);
-  };
-
-  const snoozeAlarm = () => {
-    if (audioPlayerRef.current) {
-      audioPlayerRef.current.pause();
-      audioPlayerRef.current.currentTime = 0;
-    }
-    setRingingAlarm(null);
-    // Logic to add 5 mins could go here, currently just stops ringing
-    // Simulating snooze by not turning off 'isActive' but ensuring it doesn't re-trigger instantly requires more complex time logic (e.g. "lastTriggered" timestamp).
-    // For this simple version, we'll just stop the sound.
-  };
-
-  // Cleanup blobs on unmount
-  useEffect(() => {
-    return () => {
-      recordings.forEach(rec => URL.revokeObjectURL(rec.url));
-    };
-  }, []);
-
-  // Format seconds to MM:SS
-  const formatDuration = (secs) => {
-    const mins = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${mins}:${s.toString().padStart(2, '0')}`;
+  const handleSave = () => {
+    localStorage.setItem('sobertone_el_key', elKey);
+    localStorage.setItem('sobertone_gemini_key', gKey);
+    localStorage.setItem('sobertone_start_date', soberDate);
+    onUpdate(); // Refresh app state
+    window.location.reload();
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-8 font-sans">
-      <div className="max-w-2xl mx-auto space-y-8">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="bg-slate-900 p-6 rounded-3xl border border-slate-700 w-full max-w-sm space-y-6 shadow-2xl transform transition-all scale-100">
+        <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+          <h2 className="text-xl font-bold text-white">SoberTone Engine</h2>
+          <button onClick={onClose} className="p-1 hover:bg-slate-800 rounded-full transition-colors"><X className="text-slate-400" /></button>
+        </div>
         
-        {/* Header */}
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
-            Voice Alarm
-          </h1>
-          <p className="text-slate-400">Wake up to your own words.</p>
-        </div>
-
-        {/* SECTION 1: RECORDER */}
-        <div className="bg-slate-800 rounded-2xl p-6 shadow-xl border border-slate-700">
-          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-            <Mic className="w-5 h-5 text-indigo-400" />
-            Record Voice
-          </h2>
-          
-          <div className="flex flex-col items-center justify-center py-6 space-y-4">
-            <div className="relative">
-                {isRecording && (
-                    <span className="absolute -top-2 -right-2 flex h-3 w-3">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-                    </span>
-                )}
-                <button
-                onClick={isRecording ? stopRecording : startRecording}
-                className={`w-20 h-20 rounded-full flex items-center justify-center transition-all duration-300 shadow-lg ${
-                    isRecording 
-                    ? 'bg-red-500 hover:bg-red-600 scale-110' 
-                    : 'bg-indigo-500 hover:bg-indigo-600 hover:scale-105'
-                }`}
-                >
-                {isRecording ? <Square className="w-8 h-8 fill-current" /> : <Mic className="w-8 h-8" />}
-                </button>
-            </div>
-            
-            <div className="text-2xl font-mono font-medium text-slate-300">
-                {formatDuration(recordingTime)}
-            </div>
-            <p className="text-sm text-slate-400">
-                {isRecording ? "Recording... Tap to stop" : "Tap mic to start recording"}
-            </p>
-          </div>
-
-          {/* Recordings List */}
-          {recordings.length > 0 && (
-            <div className="mt-6 space-y-2">
-              <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider">Your Recordings</h3>
-              <div className="grid gap-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
-                {recordings.map((rec) => (
-                  <div key={rec.id} className="flex items-center justify-between bg-slate-700/50 p-3 rounded-lg border border-slate-600/50 hover:border-indigo-500/50 transition-colors">
-                    <div className="flex items-center gap-3 overflow-hidden">
-                      <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center flex-shrink-0 text-indigo-400">
-                        <Volume2 className="w-4 h-4" />
-                      </div>
-                      <span className="truncate font-medium text-sm">{rec.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button 
-                        onClick={() => playPreview(rec.url)}
-                        className="p-2 hover:bg-slate-600 rounded-full transition-colors text-indigo-300"
-                        title="Play Preview"
-                      >
-                        <Play className="w-4 h-4 fill-current" />
-                      </button>
-                      <button 
-                        onClick={() => deleteRecording(rec.id)}
-                        className="p-2 hover:bg-red-500/20 hover:text-red-400 rounded-full transition-colors text-slate-400"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* SECTION 2: ADD ALARM */}
-        <div className="bg-slate-800 rounded-2xl p-6 shadow-xl border border-slate-700">
-          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-            <Clock className="w-5 h-5 text-purple-400" />
-            Set Alarm
-          </h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div className="space-y-2">
-              <label className="text-xs text-slate-400 font-medium ml-1">Time</label>
-              <input
-                type="time"
-                value={newAlarmTime}
-                onChange={(e) => setNewAlarmTime(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 text-lg focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all"
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <label className="text-xs text-slate-400 font-medium ml-1">Voice Message</label>
-              <select
-                value={selectedRecordingId}
-                onChange={(e) => setSelectedRecordingId(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 text-lg focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all appearance-none"
-              >
-                <option value="" disabled>Select a recording</option>
-                {recordings.map(rec => (
-                  <option key={rec.id} value={rec.id}>{rec.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          
-          <div className="mb-6">
-            <label className="text-xs text-slate-400 font-medium ml-1 block mb-2">Label (Optional)</label>
-            <input
-                type="text"
-                placeholder="e.g., Wake Up, Take Meds..."
-                value={alarmLabel}
-                onChange={(e) => setAlarmLabel(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-2 text-base focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all"
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-xs text-cyan-400 font-bold uppercase tracking-wider flex items-center gap-2">
+              <Calendar className="w-3 h-3" /> Sobriety Start Date
+            </label>
+            <input 
+              type="date" 
+              value={soberDate}
+              onChange={(e) => setSoberDate(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm focus:border-cyan-500 outline-none"
             />
           </div>
 
-          <button
-            onClick={addAlarm}
-            disabled={!newAlarmTime || !selectedRecordingId}
-            className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:hover:bg-purple-600 text-white font-semibold py-3 rounded-xl shadow-lg shadow-purple-900/20 transition-all flex items-center justify-center gap-2"
-          >
-            <Plus className="w-5 h-5" />
-            Add Alarm
-          </button>
+          <div className="space-y-2">
+            <label className="text-xs text-slate-500 font-bold uppercase tracking-wider flex items-center gap-2">
+              <Volume2 className="w-3 h-3" /> ElevenLabs API Key (Voice)
+            </label>
+            <input 
+              type="password" 
+              value={elKey}
+              onChange={(e) => setElKey(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm focus:border-slate-500 outline-none"
+              placeholder="sk_..."
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs text-slate-500 font-bold uppercase tracking-wider flex items-center gap-2">
+              <Brain className="w-3 h-3" /> Gemini API Key (Brain)
+            </label>
+            <input 
+              type="password" 
+              value={gKey}
+              onChange={(e) => setGKey(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm focus:border-slate-500 outline-none"
+              placeholder="AIza..."
+            />
+          </div>
         </div>
 
-        {/* SECTION 3: ALARM LIST */}
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold flex items-center gap-2 pl-2">
-            <Bell className="w-5 h-5 text-emerald-400" />
-            Active Alarms
-          </h2>
-          
-          {alarms.length === 0 ? (
-            <div className="text-center py-10 text-slate-500 bg-slate-800/30 rounded-2xl border border-dashed border-slate-700">
-              <p>No alarms set yet.</p>
-            </div>
-          ) : (
-            <div className="grid gap-3">
-              {alarms.map(alarm => (
-                <div 
-                    key={alarm.id} 
-                    className={`flex items-center justify-between p-4 rounded-xl border transition-all duration-300 ${
-                        alarm.isActive 
-                        ? 'bg-slate-800 border-slate-600 shadow-md' 
-                        : 'bg-slate-800/50 border-slate-700/50 opacity-75'
-                    }`}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="text-2xl font-light tracking-tight">{alarm.time}</div>
-                    <div className="border-l border-slate-600 pl-4">
-                      <div className="text-sm font-medium text-slate-200">{alarm.label}</div>
-                      <div className="text-xs text-slate-400 flex items-center gap-1">
-                        <Volume2 className="w-3 h-3" />
-                        {recordings.find(r => r.id === alarm.recordingId)?.name || 'Unknown Recording'}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input 
-                        type="checkbox" 
-                        checked={alarm.isActive}
-                        onChange={() => toggleAlarm(alarm.id)}
-                        className="sr-only peer" 
-                      />
-                      <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
-                    </label>
-                    
-                    <button 
-                        onClick={() => deleteAlarm(alarm.id)}
-                        className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                    >
-                        <X className="w-5 h-5" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
+        <button 
+          onClick={handleSave}
+          className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold py-4 rounded-2xl shadow-lg shadow-cyan-900/20 transition-transform active:scale-95"
+        >
+          Save & Update
+        </button>
       </div>
-
-      {/* ALARM TRIGGERED OVERLAY */}
-      {ringingAlarm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/95 backdrop-blur-sm animate-in fade-in duration-300">
-            <div className="bg-slate-800 p-8 rounded-3xl shadow-2xl border border-indigo-500/30 max-w-sm w-full text-center space-y-8 relative overflow-hidden">
-                {/* Animated Rings */}
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-indigo-500/10 rounded-full animate-ping"></div>
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-indigo-500/20 rounded-full animate-pulse"></div>
-
-                <div className="relative z-10">
-                    <Bell className="w-16 h-16 text-indigo-400 mx-auto mb-4 animate-bounce" />
-                    <h2 className="text-4xl font-bold text-white mb-2">{ringingAlarm.time}</h2>
-                    <p className="text-xl text-indigo-300 font-medium">{ringingAlarm.label}</p>
-                    <div className="mt-2 text-sm text-slate-400 flex items-center justify-center gap-2">
-                        <Volume2 className="w-4 h-4" />
-                        Playing: {ringingAlarm.recordingName}
-                    </div>
-                </div>
-
-                <div className="grid gap-3 relative z-10">
-                    <button 
-                        onClick={stopAlarm}
-                        className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-lg shadow-lg shadow-indigo-900/30 transition-transform active:scale-95 flex items-center justify-center gap-2"
-                    >
-                        <Check className="w-6 h-6" />
-                        Stop Alarm
-                    </button>
-                    <button 
-                        onClick={snoozeAlarm}
-                        className="w-full py-3 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-xl font-medium transition-colors"
-                    >
-                        Snooze
-                    </button>
-                </div>
-            </div>
-        </div>
-      )}
-
     </div>
   );
 };
 
-export default VoiceAlarmApp;
+// --- COMPONENT: VOICE LAB ---
+const VoiceLabView = () => {
+  const [isRecording, setIsRecording] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [isTraining, setIsTraining] = useState(false);
+  const [voiceModel, setVoiceModel] = useState(localStorage.getItem('sobertone_voice_model') ? JSON.parse(localStorage.getItem('sobertone_voice_model')) : null);
+
+  const startTraining = () => {
+    setIsTraining(true);
+    let p = 0;
+    const interval = setInterval(() => {
+      p += Math.random() * 15;
+      if (p > 100) {
+        p = 100;
+        clearInterval(interval);
+        setTimeout(() => {
+          setIsTraining(false);
+          const mockModel = { id: 'cloned-voice-1', name: "Mom's Voice (AI)", date: new Date().toLocaleDateString() };
+          setVoiceModel(mockModel);
+          localStorage.setItem('sobertone_voice_model', JSON.stringify(mockModel));
+        }, 800);
+      }
+      setProgress(p);
+    }, 300);
+  };
+
+  return (
+    <div className="p-6 space-y-6 pb-32 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <header className="flex flex-col gap-1">
+        <h2 className="text-3xl font-bold text-white flex items-center gap-3">
+          Voice Lab <span className="bg-cyan-500/20 text-cyan-400 text-[10px] px-2 py-1 rounded-full uppercase tracking-widest border border-cyan-500/30">Beta</span>
+        </h2>
+        <p className="text-slate-400 text-sm leading-relaxed">Create a neural clone of a loved one's voice to power Lucy.</p>
+      </header>
+
+      {!voiceModel ? (
+        <div className="space-y-6">
+          {/* Instructions */}
+          <div className="bg-gradient-to-br from-slate-800 to-slate-900 p-5 rounded-3xl border border-slate-700/50 shadow-xl">
+            <div className="flex items-start gap-4 mb-4">
+              <div className="w-10 h-10 bg-cyan-500/10 rounded-full flex items-center justify-center flex-shrink-0">
+                <Fingerprint className="w-6 h-6 text-cyan-400" />
+              </div>
+              <div>
+                <h3 className="font-bold text-white text-lg">How to Clone</h3>
+                <p className="text-xs text-slate-400 mt-1">High-fidelity voice replication engine</p>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {[
+                "Find a quiet room with no echo.",
+                "Press record and read the script below.",
+                "Speak naturally, as if talking to a friend."
+              ].map((step, i) => (
+                <div key={i} className="flex items-center gap-3 text-sm text-slate-300 bg-slate-950/30 p-3 rounded-xl border border-white/5">
+                  <span className="w-5 h-5 rounded-full bg-slate-700 flex items-center justify-center text-[10px] font-bold text-white">{i+1}</span>
+                  {step}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Recorder */}
+          <div className="bg-slate-800 p-8 rounded-[2rem] border border-slate-700 text-center space-y-8 relative overflow-hidden shadow-2xl">
+            {isTraining && (
+              <div className="absolute inset-0 bg-slate-900/95 z-20 flex flex-col items-center justify-center p-8 backdrop-blur-sm">
+                <div className="relative w-24 h-24 mb-6">
+                  <div className="absolute inset-0 border-4 border-slate-700 rounded-full"></div>
+                  <div className="absolute inset-0 border-t-4 border-cyan-500 rounded-full animate-spin"></div>
+                  <Brain className="absolute inset-0 m-auto w-8 h-8 text-cyan-400 animate-pulse" />
+                </div>
+                <h3 className="text-white font-bold text-2xl mb-2">Synthesizing</h3>
+                <p className="text-cyan-400 font-mono text-sm">{Math.round(progress)}% COMPLETE</p>
+              </div>
+            )}
+
+            <div className="relative">
+              {isRecording && (
+                <div className="absolute inset-0 bg-red-500/20 blur-3xl rounded-full animate-pulse"></div>
+              )}
+              <button 
+                onClick={() => {
+                  if (!isRecording) {
+                    setIsRecording(true);
+                    setTimeout(() => { setIsRecording(false); startTraining(); }, 3000);
+                  }
+                }}
+                className={`relative z-10 w-24 h-24 mx-auto rounded-full flex items-center justify-center border-4 transition-all duration-500 ${
+                  isRecording 
+                  ? 'bg-red-500 border-red-400 scale-110 shadow-[0_0_40px_rgba(239,68,68,0.4)]' 
+                  : 'bg-gradient-to-b from-slate-700 to-slate-800 border-slate-600 hover:border-cyan-500 shadow-xl'
+                }`}
+              >
+                <Mic className={`w-10 h-10 ${isRecording ? 'text-white' : 'text-slate-400'}`} />
+              </button>
+            </div>
+            
+            <div className="text-left bg-slate-950/50 p-5 rounded-2xl border border-white/5">
+              <p className="text-slate-500 text-xs uppercase font-bold mb-2 tracking-wider">Script</p>
+              <p className="text-slate-200 italic text-lg font-serif leading-relaxed">
+                "I believe in you. No matter how hard it gets, remember that you are loved and you are strong enough to get through this."
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-gradient-to-br from-cyan-900/40 to-slate-900 p-8 rounded-[2rem] border border-cyan-500/30 space-y-6 animate-in zoom-in duration-500 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl -mr-20 -mt-20"></div>
+          
+          <div className="flex flex-col gap-4 relative z-10">
+            <div className="w-16 h-16 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-cyan-900/20">
+              <Fingerprint className="w-8 h-8 text-white" />
+            </div>
+            <div>
+              <h3 className="text-2xl font-bold text-white">{voiceModel.name}</h3>
+              <div className="flex items-center gap-2 mt-2">
+                <span className="bg-green-500/20 text-green-400 text-xs px-2 py-1 rounded-md font-bold uppercase tracking-wider flex items-center gap-1 border border-green-500/20">
+                  <Check className="w-3 h-3" /> Active
+                </span>
+                <span className="text-slate-500 text-xs">{voiceModel.date}</span>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-slate-950/50 p-5 rounded-2xl border border-slate-800">
+            <div className="flex justify-between items-center mb-3">
+                <p className="text-xs text-slate-500 uppercase font-bold">Voice DNA</p>
+                <div className="flex gap-1">
+                    <div className="w-1 h-1 bg-cyan-500 rounded-full"></div>
+                    <div className="w-1 h-1 bg-cyan-500 rounded-full"></div>
+                    <div className="w-1 h-1 bg-cyan-500 rounded-full"></div>
+                </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <button className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-cyan-400 hover:bg-slate-700 hover:text-white transition-all border border-slate-700">
+                <Play className="w-5 h-5 fill-current ml-1" />
+              </button>
+              <div className="h-10 flex-1 flex items-center gap-[3px] opacity-60">
+                {[...Array(25)].map((_,i) => (
+                  <div key={i} className="w-1.5 bg-cyan-400 rounded-full transition-all duration-1000 animate-pulse" style={{
+                    height: `${30 + Math.random() * 70}%`,
+                    animationDelay: `${i * 0.05}s`
+                  }}></div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <button onClick={() => { setVoiceModel(null); localStorage.removeItem('sobertone_voice_model'); }} className="w-full py-4 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm font-medium">
+            <Trash2 className="w-4 h-4" /> Delete Model
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// --- COMPONENT: LUCY CHAT ---
+const LucyChatView = () => {
+  const [messages, setMessages] = useState([
+    { id: 1, sender: 'lucy', text: "Hi, I'm Lucy. I'm here to support you using the voice of someone you trust. How are you feeling right now?" }
+  ]);
+  const [input, setInput] = useState("");
+  const [isThinking, setIsThinking] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const messagesEndRef = useRef(null);
+
+  const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  useEffect(() => scrollToBottom(), [messages, isThinking]);
+
+  const speakText = (text) => {
+    if (!voiceEnabled || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    const voices = window.speechSynthesis.getVoices();
+    const preferredVoice = voices.find(v => v.name.includes('Google US English') || v.name.includes('Samantha')) || voices[0];
+    if (preferredVoice) utterance.voice = preferredVoice;
+    utterance.pitch = 1.1; 
+    utterance.rate = 0.95;
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const generateAIResponse = async (userText) => {
+    setIsThinking(true);
+    try {
+      const keyToUse = CONFIG.geminiKey;
+      if (!keyToUse) {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        finishResponse("I hear you. It takes strength to share that. I'm here with you every step of the way.");
+        return;
+      }
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${keyToUse}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ parts: [{ text: `You are Lucy, an empathetic AI addiction recovery companion. Be supportive, gentle, and concise. User: "${userText}"` }] }] })
+      });
+      const data = await response.json();
+      finishResponse(data.candidates?.[0]?.content?.parts?.[0]?.text || "I'm here for you.");
+    } catch (error) {
+      finishResponse("I'm having trouble connecting, but please know I'm here for you.");
+    }
+  };
+
+  const finishResponse = (text) => {
+    setMessages(prev => [...prev, { id: Date.now(), sender: 'lucy', text }]);
+    setIsThinking(false);
+    speakText(text);
+  };
+
+  const sendMessage = (e) => {
+    e.preventDefault();
+    if (!input.trim()) return;
+    setMessages(prev => [...prev, { id: Date.now(), sender: 'user', text: input }]);
+    setInput("");
+    generateAIResponse(input);
+  };
+
+  return (
+    <div className="flex flex-col h-[calc(100vh-90px)] bg-slate-950">
+      {/* Chat Header */}
+      <div className="p-4 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 sticky top-0 z-10 flex items-center justify-between shadow-sm">
+        <div className="flex items-center gap-4">
+          <div className="relative">
+            <div className={`w-12 h-12 rounded-full p-[2px] ${isSpeaking ? 'animate-pulse bg-cyan-400' : 'bg-gradient-to-br from-cyan-400 to-purple-500'}`}>
+              <img src={ASSETS.mascot} className="w-full h-full rounded-full object-cover bg-slate-800" alt="Lucy" />
+            </div>
+            {isSpeaking && (
+              <div className="absolute -bottom-1 -right-1 bg-green-500 text-slate-900 rounded-full p-1 border-2 border-slate-900">
+                <Volume2 className="w-3 h-3" />
+              </div>
+            )}
+          </div>
+          <div>
+            <h3 className="font-bold text-white text-lg">Lucy</h3>
+            <p className="text-xs text-cyan-400 flex items-center gap-1 font-medium">
+              <Sparkles className="w-3 h-3" /> AI Companion
+            </p>
+          </div>
+        </div>
+        <button onClick={() => { setVoiceEnabled(!voiceEnabled); window.speechSynthesis.cancel(); }} className={`p-3 rounded-xl transition-colors ${voiceEnabled ? 'bg-cyan-500/10 text-cyan-400' : 'bg-slate-800 text-slate-500'}`}>
+          {voiceEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+        </button>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar pb-4">
+        {messages.map(msg => (
+          <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+            {msg.sender === 'lucy' && <img src={ASSETS.mascot} className="w-8 h-8 rounded-full mr-2 self-end mb-1 border border-slate-700" />}
+            <div className={`max-w-[80%] p-4 rounded-2xl text-sm leading-relaxed shadow-md ${
+              msg.sender === 'user' 
+                ? 'bg-gradient-to-br from-cyan-600 to-blue-600 text-white rounded-tr-none' 
+                : 'bg-slate-800 text-slate-200 rounded-tl-none border border-slate-700'
+            }`}>
+              {msg.text}
+            </div>
+          </div>
+        ))}
+        {isThinking && (
+          <div className="flex justify-start items-center gap-2 animate-in fade-in">
+            <img src={ASSETS.mascot} className="w-8 h-8 rounded-full border border-slate-700" />
+            <div className="bg-slate-800 px-4 py-3 rounded-2xl rounded-tl-none border border-slate-700 flex gap-1">
+              <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce delay-0"></div>
+              <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce delay-100"></div>
+              <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce delay-200"></div>
+            </div>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Input */}
+      <form onSubmit={sendMessage} className="p-4 bg-slate-900 border-t border-slate-800 flex gap-3 pb-6">
+        <input 
+          type="text" 
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Type message to Lucy..."
+          className="flex-1 bg-slate-950 border border-slate-700 rounded-2xl px-5 py-4 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none placeholder:text-slate-600"
+        />
+        <button type="submit" disabled={!input.trim() || isThinking} className="bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-900 p-4 rounded-2xl transition-all shadow-lg shadow-cyan-500/20">
+          <ArrowRight className="w-6 h-6" strokeWidth={3} />
+        </button>
+      </form>
+    </div>
+  );
+};
+
+// --- COMPONENT: REMINDERS VIEW ---
+const RemindersView = () => {
+  const [alarms, setAlarms] = useState([]);
+  const [reminderText, setReminderText] = useState('');
+  const [reminderTime, setReminderTime] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [ringingAlarm, setRingingAlarm] = useState(null);
+  const audioPlayerRef = useRef(null);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = new Date().toTimeString().slice(0, 5);
+      alarms.forEach(a => { if (a.isActive && a.time === now && !ringingAlarm) triggerAlarm(a); });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [alarms, ringingAlarm]);
+
+  const generateAudio = async (text) => {
+    if (CONFIG.elevenLabsKey) {
+      try {
+        const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM`, {
+          method: "POST", headers: { "xi-api-key": CONFIG.elevenLabsKey, "Content-Type": "application/json" },
+          body: JSON.stringify({ text, model_id: "eleven_monolingual_v1" })
+        });
+        return URL.createObjectURL(await res.blob());
+      } catch (e) { return null; }
+    }
+    return null;
+  };
+
+  const addAlarm = async () => {
+    if (!reminderTime || !reminderText) return;
+    setIsGenerating(true);
+    const audioUrl = await generateAudio(reminderText);
+    setAlarms([...alarms, { id: Date.now(), time: reminderTime, text: reminderText, audioUrl, isActive: true }]);
+    setReminderText('');
+    setIsGenerating(false);
+  };
+
+  const triggerAlarm = (alarm) => {
+    setRingingAlarm(alarm);
+    if (alarm.audioUrl) {
+      if (audioPlayerRef.current) audioPlayerRef.current.pause();
+      audioPlayerRef.current = new Audio(alarm.audioUrl);
+      audioPlayerRef.current.loop = true;
+      audioPlayerRef.current.play().catch(console.error);
+    } else {
+      const u = new SpeechSynthesisUtterance(alarm.text);
+      u.rate = 0.9;
+      window.ringingAlarmRef = alarm;
+      const loop = () => { if (window.ringingAlarmRef?.id === alarm.id) { window.speechSynthesis.speak(u); u.onend = () => setTimeout(loop, 1000); } };
+      loop();
+    }
+  };
+
+  const stopAlarm = () => {
+    if (audioPlayerRef.current) audioPlayerRef.current.pause();
+    window.speechSynthesis.cancel();
+    window.ringingAlarmRef = null;
+    setRingingAlarm(null);
+  };
+
+  return (
+    <div className="p-6 pb-32 space-y-8 animate-in slide-in-from-right duration-500">
+      <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-[2rem] p-8 border border-slate-700 shadow-2xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-48 h-48 bg-purple-500/10 rounded-full blur-3xl -mr-10 -mt-10"></div>
+        <h2 className="text-xl font-bold mb-6 flex items-center gap-3 text-white relative z-10">
+          <div className="p-2 bg-purple-500/20 rounded-lg"><Sparkles className="w-5 h-5 text-purple-400" /></div>
+          Create AI Reminder
+        </h2>
+        <div className="space-y-6 relative z-10">
+          <div className="space-y-2">
+            <label className="text-xs text-slate-400 font-bold ml-1 uppercase tracking-wider">Script for Lucy</label>
+            <textarea value={reminderText} onChange={(e) => setReminderText(e.target.value)} placeholder="Hey, it's time for your meditation. We are so proud of you." className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-5 py-4 text-white text-sm focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none h-28 resize-none leading-relaxed" />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs text-slate-400 font-bold ml-1 uppercase tracking-wider">Time</label>
+            <input type="time" value={reminderTime} onChange={(e) => setReminderTime(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-5 py-4 text-white text-lg focus:border-purple-500 outline-none" />
+          </div>
+          <button onClick={addAlarm} disabled={!reminderTime || !reminderText || isGenerating} className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:opacity-50 text-white font-bold py-4 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-purple-900/30">
+            {isGenerating ? <Loader className="w-5 h-5 animate-spin" /> : <Brain className="w-5 h-5" />}
+            {isGenerating ? "Synthesizing..." : "Set AI Reminder"}
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <h3 className="text-slate-400 text-xs font-bold tracking-widest uppercase pl-2">Scheduled</h3>
+        {alarms.map(alarm => (
+          <div key={alarm.id} className="bg-slate-800/40 p-5 rounded-2xl border border-slate-700/50 flex justify-between items-center backdrop-blur-sm">
+            <div className="flex items-center gap-5">
+                <div className="text-2xl text-white font-light tracking-tight">{alarm.time}</div>
+                <div className="h-8 w-px bg-slate-700"></div>
+                <div className="flex flex-col max-w-[160px]">
+                    <span className="text-slate-200 text-sm font-medium truncate">"{alarm.text}"</span>
+                    <span className="text-purple-400 text-[10px] font-bold flex items-center gap-1 uppercase mt-1"><Brain className="w-3 h-3"/> Generated</span>
+                </div>
+            </div>
+            <button onClick={() => setAlarms(alarms.filter(a => a.id !== alarm.id))} className="p-3 text-slate-500 hover:text-red-400 bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors"><Trash2 className="w-5 h-5" /></button>
+          </div>
+        ))}
+      </div>
+
+      {ringingAlarm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 backdrop-blur-lg animate-in zoom-in duration-300">
+          <div className="w-full max-w-sm text-center relative p-8">
+            <div className="w-40 h-40 mx-auto mb-8 relative">
+               <div className="absolute inset-0 bg-cyan-500/30 rounded-full animate-ping"></div>
+               <div className="absolute inset-0 bg-purple-500/30 rounded-full animate-ping" style={{animationDelay: '0.5s'}}></div>
+               <img src={ASSETS.mascot} className="w-full h-full rounded-full border-4 border-slate-800 relative z-10 shadow-2xl" />
+            </div>
+            <h2 className="text-7xl font-bold text-white tracking-tighter mb-2">{ringingAlarm.time}</h2>
+            <div className="bg-slate-800/50 p-6 rounded-3xl border border-white/10 backdrop-blur-md mb-8">
+                <p className="text-cyan-200 text-lg font-medium leading-relaxed">"{ringingAlarm.text}"</p>
+            </div>
+            <button onClick={stopAlarm} className="w-full py-5 bg-white hover:bg-slate-200 text-slate-900 rounded-2xl font-bold text-xl shadow-xl transform active:scale-95 transition-all">I'm Listening</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// --- COMPONENT: ASSESSMENT ---
+const AssessmentView = ({ onComplete }) => {
+  const [step, setStep] = useState(0);
+  const [score, setScore] = useState(0);
+  const [finished, setFinished] = useState(false);
+  const qs = [
+    { t: "How often do you use substances to cope with stress?", o: [{l:"Rarely",v:1}, {l:"Sometimes",v:3}, {l:"Daily",v:5}] },
+    { t: "Have you unsuccessfully tried to cut down?", o: [{l:"Never",v:0}, {l:"Once",v:2}, {l:"Multiple times",v:5}] },
+    { t: "Do you hide your usage from friends/family?", o: [{l:"No",v:0}, {l:"Yes",v:5}] },
+    { t: "Has it impacted your work or responsibilities?", o: [{l:"No",v:0}, {l:"Slightly",v:2}, {l:"Severely",v:5}] }
+  ];
+
+  const answer = (v) => {
+    const ns = score + v;
+    if (step < qs.length - 1) { setScore(ns); setStep(step + 1); } else { 
+      setScore(ns); 
+      setFinished(true);
+      // Save score permanently
+      localStorage.setItem('sobertone_stage_score', ns);
+      onComplete(); // Refresh parent state
+    }
+  };
+
+  const getStageFromScore = (s) => s < 5 ? "Stage 1" : s < 10 ? "Stage 2" : s < 15 ? "Stage 3" : "Stage 4+";
+
+  return (
+    <div className="p-6 pt-10 pb-32 animate-in fade-in">
+      <div className="flex items-center gap-3 mb-8">
+        <div className="w-12 h-12 bg-purple-500/20 rounded-2xl flex items-center justify-center">
+            <Activity className="w-6 h-6 text-purple-400" />
+        </div>
+        <div>
+            <h2 className="text-2xl font-bold text-white">Assessment</h2>
+            <p className="text-slate-400 text-sm">Determine your support stage.</p>
+        </div>
+      </div>
+
+      {!finished ? (
+        <div className="bg-slate-800 p-8 rounded-[2rem] border border-slate-700 shadow-xl">
+          <div className="flex justify-between text-xs font-bold text-slate-500 uppercase mb-6">
+            <span>Question {step + 1}</span>
+            <span>{qs.length} Total</span>
+          </div>
+          <h3 className="text-xl text-white font-medium mb-10 leading-relaxed">{qs[step].t}</h3>
+          <div className="space-y-3">
+            {qs[step].o.map((opt, i) => (
+              <button key={i} onClick={() => answer(opt.v)} className="w-full p-5 text-left rounded-2xl bg-slate-900 hover:bg-slate-700 border border-slate-800 text-slate-200 transition-all flex justify-between items-center group active:scale-[0.98]">
+                {opt.l}
+                <ChevronRight className="w-5 h-5 text-slate-600 group-hover:text-cyan-400 transition-colors" />
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="bg-gradient-to-br from-slate-800 to-slate-900 p-8 rounded-[2rem] border border-slate-700 text-center space-y-8 shadow-2xl">
+          <div className="w-24 h-24 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-full mx-auto flex items-center justify-center shadow-lg shadow-cyan-500/30">
+            <ShieldCheck className="w-10 h-10 text-white" />
+          </div>
+          <div>
+            <p className="text-slate-400 text-xs uppercase tracking-widest font-bold mb-2">Your Assessment Result</p>
+            <h3 className="text-4xl font-bold text-white mb-4">{getStageFromScore(score)}</h3>
+            <p className="text-slate-300 leading-relaxed text-sm px-4">
+              Based on your score, we recommend utilizing <strong>Lucy's daily check-ins</strong> and setting up <strong>AI Reminders</strong> immediately.
+            </p>
+          </div>
+          <button onClick={() => {setStep(0); setScore(0); setFinished(false)}} className="text-cyan-400 font-bold hover:text-cyan-300 py-2 px-4 rounded-xl hover:bg-cyan-500/10 transition-colors">Retake Assessment</button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// --- MAIN APP COMPONENT ---
+const SobertoneApp = () => {
+  const [activeTab, setActiveTab] = useState('home');
+  const [showSettings, setShowSettings] = useState(false);
+  const [soberDays, setSoberDays] = useState(0);
+  const [stageScore, setStageScore] = useState(null);
+
+  const refreshData = () => {
+    setSoberDays(getDaysSober());
+    setStageScore(getSavedStage());
+  };
+
+  useEffect(() => {
+    // Initialize default start date if none exists
+    if (!localStorage.getItem('sobertone_start_date')) {
+      localStorage.setItem('sobertone_start_date', new Date().toISOString().split('T')[0]);
+    }
+    refreshData();
+  }, []);
+
+  const getStageDisplay = () => {
+    if (stageScore === null) return "Unset";
+    if (stageScore < 5) return "Stage 1";
+    if (stageScore < 10) return "Stage 2";
+    if (stageScore < 15) return "Stage 3";
+    return "Stage 4+";
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-cyan-500/30 overflow-hidden">
+      <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} onUpdate={refreshData} />
+
+      {activeTab === 'home' && (
+        <div className="p-6 pb-32 space-y-8 animate-in fade-in duration-500">
+          <header className="flex items-center justify-between pt-4">
+            <img src={ASSETS.logo} alt="SoberTone" className="h-12 w-auto object-contain" />
+            <button onClick={() => setShowSettings(true)} className="w-12 h-12 rounded-full bg-slate-800/50 border border-slate-700 flex items-center justify-center hover:bg-slate-700 transition-colors backdrop-blur-sm">
+              <Settings className="w-6 h-6 text-slate-400" />
+            </button>
+          </header>
+
+          {/* Hero Card */}
+          <div className="bg-gradient-to-br from-[#4F46E5] to-[#06B6D4] rounded-[2.5rem] p-8 shadow-2xl shadow-cyan-900/30 relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-20 -mt-20 blur-3xl group-hover:bg-white/20 transition-colors duration-700"></div>
+            
+            <div className="relative z-10 flex flex-col items-start">
+              <div className="flex items-center gap-2 bg-white/20 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold text-white mb-4 border border-white/20">
+                <Sparkles className="w-3 h-3" /> Daily Motivation
+              </div>
+              <h2 className="text-3xl font-bold text-white mb-4 leading-tight">You are stronger<br/>than you think.</h2>
+              <p className="text-cyan-50/90 text-sm mb-8 max-w-[90%] leading-relaxed font-medium">
+                "Recovery is not about seeing the whole staircase, just taking the first step."
+              </p>
+              <div className="flex gap-3 w-full">
+                <button onClick={() => setActiveTab('lucy')} className="flex-1 bg-white text-blue-900 py-4 rounded-2xl font-bold text-sm hover:bg-blue-50 transition-all shadow-lg flex items-center justify-center gap-2">
+                  <MessageCircle className="w-4 h-4" /> Talk to Lucy
+                </button>
+                <button onClick={() => setActiveTab('voice-lab')} className="px-6 bg-blue-900/40 text-white py-4 rounded-2xl font-bold text-sm hover:bg-blue-900/60 transition-all backdrop-blur-md border border-white/20">
+                  <Fingerprint className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            
+            {/* Mascot Peeking Image */}
+            <img src={ASSETS.mascot} className="absolute -bottom-10 -right-6 w-40 opacity-20 grayscale mix-blend-overlay rotate-12 pointer-events-none" />
+          </div>
+
+          {/* Quick Stats */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-slate-800/40 p-6 rounded-[2rem] border border-slate-700/50 backdrop-blur-sm">
+                <div className="text-4xl font-bold text-white mb-2">{soberDays}</div>
+                <div className="text-xs text-slate-400 uppercase tracking-wider font-bold">Days Sober</div>
+            </div>
+            <button onClick={() => setActiveTab('assessment')} className="bg-slate-800/40 p-6 rounded-[2rem] border border-slate-700/50 backdrop-blur-sm text-left hover:bg-slate-800/60 transition-colors group">
+                <div className="text-4xl font-bold text-white mb-2 group-hover:text-purple-400 transition-colors flex items-center gap-2">
+                  {getStageDisplay()} <ArrowRight className="w-5 h-5 opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all" />
+                </div>
+                <div className="text-xs text-slate-400 uppercase tracking-wider font-bold">Check Stage</div>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'voice-lab' && <VoiceLabView />}
+      {activeTab === 'lucy' && <LucyChatView />}
+      {activeTab === 'assessment' && <AssessmentView onComplete={refreshData} />}
+      {activeTab === 'reminders' && <RemindersView />}
+
+      <NavBar activeTab={activeTab} setActiveTab={setActiveTab} />
+    </div>
+  );
+};
+
+export default SobertoneApp;
