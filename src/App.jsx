@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Mic, Square, Play, Trash2, Plus, Bell, Volume2, VolumeX, Clock, X, 
   MessageCircle, Activity, Heart, Home, Settings, Check, ChevronRight, 
-  Sparkles, Brain, Loader, Fingerprint, ArrowRight, ShieldCheck, Info, Calendar
+  Sparkles, Brain, Loader, Fingerprint, ArrowRight, ShieldCheck, Info, Calendar, ChevronUp, ChevronDown
 } from 'lucide-react';
 
 // --- ASSETS CONFIGURATION ---
@@ -17,7 +17,6 @@ const CONFIG = {
   geminiKey: localStorage.getItem('sobertone_gemini_key') || '',
 };
 
-// Helper to calculate days sober
 const getDaysSober = () => {
   const start = localStorage.getItem('sobertone_start_date');
   if (!start) return 0;
@@ -25,15 +24,85 @@ const getDaysSober = () => {
   return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
 };
 
-// Helper to get saved stage
 const getSavedStage = () => {
   const score = localStorage.getItem('sobertone_stage_score');
   return score ? parseInt(score, 10) : null;
 };
 
+// --- COMPONENT: TIME PICKER (NEW FEATURE) ---
+const TimePicker = ({ value, onChange }) => {
+  // Parse initial time (HH:MM) or default to current time
+  const parseTime = (t) => {
+    if (!t) {
+      const now = new Date();
+      return { 
+        h: now.getHours() % 12 || 12, 
+        m: now.getMinutes(), 
+        ampm: now.getHours() >= 12 ? 'PM' : 'AM' 
+      };
+    }
+    const [h24, m] = t.split(':').map(Number);
+    return {
+      h: h24 % 12 || 12,
+      m: m,
+      ampm: h24 >= 12 ? 'PM' : 'AM'
+    };
+  };
+
+  const [time, setTime] = useState(parseTime(value));
+
+  useEffect(() => {
+    // Convert back to 24h format for parent component
+    let h24 = time.ampm === 'PM' ? (time.h % 12) + 12 : time.h % 12;
+    const str = `${h24.toString().padStart(2, '0')}:${time.m.toString().padStart(2, '0')}`;
+    onChange(str);
+  }, [time]);
+
+  const cycle = (key, max, min = 0) => {
+    setTime(prev => {
+      let val = prev[key] + 1;
+      if (val > max) val = min;
+      return { ...prev, [key]: val };
+    });
+  };
+  
+  const cycleDown = (key, max, min = 0) => {
+    setTime(prev => {
+        let val = prev[key] - 1;
+        if (val < min) val = max;
+        return { ...prev, [key]: val };
+    });
+  };
+
+  const toggleAMPM = () => setTime(prev => ({ ...prev, ampm: prev.ampm === 'AM' ? 'PM' : 'AM' }));
+
+  return (
+    <div className="flex items-center justify-center gap-2 bg-slate-950 p-4 rounded-2xl border border-slate-800">
+      {/* Hours */}
+      <div className="flex flex-col items-center">
+        <button onClick={() => cycle('h', 12, 1)} className="p-2 text-slate-500 hover:text-cyan-400"><ChevronUp className="w-4 h-4"/></button>
+        <div className="text-3xl font-bold text-white w-16 text-center tabular-nums">{time.h.toString().padStart(2, '0')}</div>
+        <button onClick={() => cycleDown('h', 12, 1)} className="p-2 text-slate-500 hover:text-cyan-400"><ChevronDown className="w-4 h-4"/></button>
+      </div>
+      <div className="text-3xl font-bold text-slate-600 mb-1">:</div>
+      {/* Minutes */}
+      <div className="flex flex-col items-center">
+        <button onClick={() => cycle('m', 59)} className="p-2 text-slate-500 hover:text-cyan-400"><ChevronUp className="w-4 h-4"/></button>
+        <div className="text-3xl font-bold text-white w-16 text-center tabular-nums">{time.m.toString().padStart(2, '0')}</div>
+        <button onClick={() => cycleDown('m', 59)} className="p-2 text-slate-500 hover:text-cyan-400"><ChevronDown className="w-4 h-4"/></button>
+      </div>
+      {/* AM/PM */}
+      <div className="ml-2 flex flex-col gap-2">
+        <button onClick={toggleAMPM} className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${time.ampm === 'AM' ? 'bg-cyan-500 text-white' : 'bg-slate-800 text-slate-500'}`}>AM</button>
+        <button onClick={toggleAMPM} className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${time.ampm === 'PM' ? 'bg-purple-500 text-white' : 'bg-slate-800 text-slate-500'}`}>PM</button>
+      </div>
+    </div>
+  );
+};
+
 // --- COMPONENT: NAVIGATION BAR ---
 const NavBar = ({ activeTab, setActiveTab }) => (
-  <div className="fixed bottom-0 left-0 right-0 bg-white/5 backdrop-blur-xl border-t border-white/10 p-2 pb-6 flex justify-around items-center z-50 safe-area-pb shadow-2xl">
+  <div className="fixed bottom-0 left-0 right-0 bg-slate-900/90 backdrop-blur-xl border-t border-white/10 p-2 pb-6 flex justify-around items-center z-50 safe-area-pb shadow-2xl">
     <NavBtn id="home" icon={Home} label="Home" active={activeTab} set={setActiveTab} />
     <NavBtn id="voice-lab" icon={Fingerprint} label="Voice Lab" active={activeTab} set={setActiveTab} />
     <NavBtn id="lucy" icon={MessageCircle} label="Lucy AI" active={activeTab} set={setActiveTab} />
@@ -67,7 +136,7 @@ const SettingsModal = ({ isOpen, onClose, onUpdate }) => {
     localStorage.setItem('sobertone_el_key', elKey);
     localStorage.setItem('sobertone_gemini_key', gKey);
     localStorage.setItem('sobertone_start_date', soberDate);
-    onUpdate(); // Refresh app state
+    onUpdate(); 
     window.location.reload();
   };
 
@@ -167,7 +236,6 @@ const VoiceLabView = () => {
 
       {!voiceModel ? (
         <div className="space-y-6">
-          {/* Instructions */}
           <div className="bg-gradient-to-br from-slate-800 to-slate-900 p-5 rounded-3xl border border-slate-700/50 shadow-xl">
             <div className="flex items-start gap-4 mb-4">
               <div className="w-10 h-10 bg-cyan-500/10 rounded-full flex items-center justify-center flex-shrink-0">
@@ -192,7 +260,6 @@ const VoiceLabView = () => {
             </div>
           </div>
 
-          {/* Recorder */}
           <div className="bg-slate-800 p-8 rounded-[2rem] border border-slate-700 text-center space-y-8 relative overflow-hidden shadow-2xl">
             {isTraining && (
               <div className="absolute inset-0 bg-slate-900/95 z-20 flex flex-col items-center justify-center p-8 backdrop-blur-sm">
@@ -352,7 +419,6 @@ const LucyChatView = () => {
 
   return (
     <div className="flex flex-col h-[calc(100vh-90px)] bg-slate-950">
-      {/* Chat Header */}
       <div className="p-4 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 sticky top-0 z-10 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-4">
           <div className="relative">
@@ -377,7 +443,6 @@ const LucyChatView = () => {
         </button>
       </div>
 
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar pb-4">
         {messages.map(msg => (
           <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -404,7 +469,6 @@ const LucyChatView = () => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
       <form onSubmit={sendMessage} className="p-4 bg-slate-900 border-t border-slate-800 flex gap-3 pb-6">
         <input 
           type="text" 
@@ -432,8 +496,19 @@ const RemindersView = () => {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      const now = new Date().toTimeString().slice(0, 5);
-      alarms.forEach(a => { if (a.isActive && a.time === now && !ringingAlarm) triggerAlarm(a); });
+      const now = new Date();
+      // Format time as HH:MM (24h) to match picker output
+      const h24 = now.getHours().toString().padStart(2, '0');
+      const m = now.getMinutes().toString().padStart(2, '0');
+      const currentTime = `${h24}:${m}`;
+      
+      alarms.forEach(a => { 
+        if (a.isActive && a.time === currentTime && !ringingAlarm) {
+            // Check if seconds are 00 to avoid re-triggering same minute multiple times if closed quickly
+            // Or just rely on !ringingAlarm state
+            triggerAlarm(a); 
+        }
+      });
     }, 1000);
     return () => clearInterval(interval);
   }, [alarms, ringingAlarm]);
@@ -462,24 +537,50 @@ const RemindersView = () => {
 
   const triggerAlarm = (alarm) => {
     setRingingAlarm(alarm);
+    
+    // Fix for overlapping audio
+    if (audioPlayerRef.current) {
+        audioPlayerRef.current.pause();
+        audioPlayerRef.current.currentTime = 0;
+    }
+    window.speechSynthesis.cancel();
+
     if (alarm.audioUrl) {
-      if (audioPlayerRef.current) audioPlayerRef.current.pause();
       audioPlayerRef.current = new Audio(alarm.audioUrl);
       audioPlayerRef.current.loop = true;
       audioPlayerRef.current.play().catch(console.error);
     } else {
+      // Store ID on window to robustly control the loop across closure scope
+      window.activeAlarmId = alarm.id;
+      
       const u = new SpeechSynthesisUtterance(alarm.text);
       u.rate = 0.9;
-      window.ringingAlarmRef = alarm;
-      const loop = () => { if (window.ringingAlarmRef?.id === alarm.id) { window.speechSynthesis.speak(u); u.onend = () => setTimeout(loop, 1000); } };
-      loop();
+      
+      const speak = () => {
+        if (window.activeAlarmId !== alarm.id) return; // Stop if ID changed (stopped)
+        window.speechSynthesis.speak(u);
+        u.onend = () => {
+            if (window.activeAlarmId === alarm.id) {
+                setTimeout(speak, 1000);
+            }
+        };
+      };
+      speak();
     }
   };
 
   const stopAlarm = () => {
-    if (audioPlayerRef.current) audioPlayerRef.current.pause();
-    window.speechSynthesis.cancel();
-    window.ringingAlarmRef = null;
+    // 1. Stop Audio Element
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+      audioPlayerRef.current.currentTime = 0;
+    }
+    
+    // 2. Stop Speech Synthesis Hard
+    window.activeAlarmId = null; // Kill the loop condition
+    window.speechSynthesis.cancel(); // Stop speaking immediately
+    
+    // 3. Clear UI
     setRingingAlarm(null);
   };
 
@@ -494,11 +595,11 @@ const RemindersView = () => {
         <div className="space-y-6 relative z-10">
           <div className="space-y-2">
             <label className="text-xs text-slate-400 font-bold ml-1 uppercase tracking-wider">Script for Lucy</label>
-            <textarea value={reminderText} onChange={(e) => setReminderText(e.target.value)} placeholder="Hey, it's time for your meditation. We are so proud of you." className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-5 py-4 text-white text-sm focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none h-28 resize-none leading-relaxed" />
+            <textarea value={reminderText} onChange={(e) => setReminderText(e.target.value)} placeholder="Hey, it's time for your meditation. We are so proud of you." className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-5 py-4 text-white text-sm focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none h-24 resize-none leading-relaxed" />
           </div>
           <div className="space-y-2">
             <label className="text-xs text-slate-400 font-bold ml-1 uppercase tracking-wider">Time</label>
-            <input type="time" value={reminderTime} onChange={(e) => setReminderTime(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-5 py-4 text-white text-lg focus:border-purple-500 outline-none" />
+            <TimePicker value={reminderTime} onChange={setReminderTime} />
           </div>
           <button onClick={addAlarm} disabled={!reminderTime || !reminderText || isGenerating} className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:opacity-50 text-white font-bold py-4 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-purple-900/30">
             {isGenerating ? <Loader className="w-5 h-5 animate-spin" /> : <Brain className="w-5 h-5" />}
@@ -530,7 +631,7 @@ const RemindersView = () => {
             <div className="w-40 h-40 mx-auto mb-8 relative">
                <div className="absolute inset-0 bg-cyan-500/30 rounded-full animate-ping"></div>
                <div className="absolute inset-0 bg-purple-500/30 rounded-full animate-ping" style={{animationDelay: '0.5s'}}></div>
-               <img src={ASSETS.mascot} className="w-full h-full rounded-full border-4 border-slate-800 relative z-10 shadow-2xl" />
+               <img src={ASSETS.mascot} className="w-full h-full rounded-full border-4 border-slate-800 relative z-10 shadow-2xl bg-slate-800" alt="Lucy" />
             </div>
             <h2 className="text-7xl font-bold text-white tracking-tighter mb-2">{ringingAlarm.time}</h2>
             <div className="bg-slate-800/50 p-6 rounded-3xl border border-white/10 backdrop-blur-md mb-8">
@@ -561,9 +662,8 @@ const AssessmentView = ({ onComplete }) => {
     if (step < qs.length - 1) { setScore(ns); setStep(step + 1); } else { 
       setScore(ns); 
       setFinished(true);
-      // Save score permanently
       localStorage.setItem('sobertone_stage_score', ns);
-      onComplete(); // Refresh parent state
+      onComplete();
     }
   };
 
@@ -629,7 +729,6 @@ const SobertoneApp = () => {
   };
 
   useEffect(() => {
-    // Initialize default start date if none exists
     if (!localStorage.getItem('sobertone_start_date')) {
       localStorage.setItem('sobertone_start_date', new Date().toISOString().split('T')[0]);
     }
