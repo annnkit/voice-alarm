@@ -6,7 +6,6 @@ import {
 } from 'lucide-react';
 
 // --- ASSETS CONFIGURATION ---
-// Ensure STinstaLOGO.png and STmascot.jpg are in your /public folder
 const ASSETS = {
   logo: "/STinstaLOGO.png",
   mascot: "/STmascot.jpg"
@@ -31,7 +30,6 @@ const getSavedStage = () => {
 };
 
 // --- HELPER: AUDIO UNLOCKER ---
-// Browsers block audio context until user interaction. We call this on any click.
 const unlockAudioContext = () => {
   const AudioContext = window.AudioContext || window.webkitAudioContext;
   if (AudioContext) {
@@ -78,7 +76,7 @@ const TimePicker = ({ value, onChange }) => {
   };
 
   return (
-    <div className="flex items-center justify-center gap-2 bg-slate-950 p-4 rounded-2xl border border-slate-800 shadow-inner" onClick={unlockAudioContext}>
+    <div className="flex items-center justify-center gap-2 bg-slate-950 p-4 rounded-2xl border border-slate-800 shadow-inner" onClick={(e) => e.stopPropagation()}>
       {/* Hours */}
       <div className="flex flex-col items-center">
         <button onClick={() => cycle('h', 12, 1)} className="p-2 text-slate-500 hover:text-cyan-400 active:scale-90 transition-transform"><ChevronUp className="w-5 h-5"/></button>
@@ -501,11 +499,11 @@ const RemindersView = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [ringingAlarm, setRingingAlarm] = useState(null);
   const audioPlayerRef = useRef(null);
+  const speechTimeoutRef = useRef(null);
 
   useEffect(() => {
     const interval = setInterval(() => {
       const now = new Date();
-      // Format time as HH:MM (24h)
       const h24 = now.getHours().toString().padStart(2, '0');
       const m = now.getMinutes().toString().padStart(2, '0');
       const currentTime = `${h24}:${m}`;
@@ -544,29 +542,28 @@ const RemindersView = () => {
   const triggerAlarm = (alarm) => {
     setRingingAlarm(alarm);
     
-    // Fix overlapping audio
     if (audioPlayerRef.current) {
         audioPlayerRef.current.pause();
         audioPlayerRef.current.currentTime = 0;
     }
     window.speechSynthesis.cancel();
+    if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
 
     if (alarm.audioUrl) {
       audioPlayerRef.current = new Audio(alarm.audioUrl);
       audioPlayerRef.current.loop = true;
       audioPlayerRef.current.play().catch(console.error);
     } else {
-      // Robust Loop for Speech Synthesis
       window.activeAlarmId = alarm.id;
       const u = new SpeechSynthesisUtterance(alarm.text);
       u.rate = 0.9;
       
       const speakLoop = () => {
-        if (window.activeAlarmId !== alarm.id) return; // Stop if ID changed
+        if (window.activeAlarmId !== alarm.id) return; 
         window.speechSynthesis.speak(u);
         u.onend = () => {
             if (window.activeAlarmId === alarm.id) {
-                setTimeout(speakLoop, 1500); // 1.5s delay between loops
+                speechTimeoutRef.current = setTimeout(speakLoop, 1500); 
             }
         };
       };
@@ -580,9 +577,15 @@ const RemindersView = () => {
       audioPlayerRef.current.currentTime = 0;
     }
     
-    // Hard Stop for Speech
     window.activeAlarmId = null; 
     window.speechSynthesis.cancel(); 
+    if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
+    
+    if (ringingAlarm) {
+        setAlarms(prev => prev.map(a => 
+            a.id === ringingAlarm.id ? { ...a, isActive: false } : a
+        ));
+    }
     
     setRingingAlarm(null);
   };
@@ -614,7 +617,7 @@ const RemindersView = () => {
       <div className="space-y-4">
         <h3 className="text-slate-400 text-xs font-bold tracking-widest uppercase pl-2">Scheduled</h3>
         {alarms.map(alarm => (
-          <div key={alarm.id} className="bg-slate-800/40 p-5 rounded-2xl border border-slate-700/50 flex justify-between items-center backdrop-blur-sm">
+          <div key={alarm.id} className={`bg-slate-800/40 p-5 rounded-2xl border border-slate-700/50 flex justify-between items-center backdrop-blur-sm transition-all ${!alarm.isActive ? 'opacity-50' : ''}`}>
             <div className="flex items-center gap-5">
                 <div className="text-2xl text-white font-light tracking-tight">{alarm.time}</div>
                 <div className="h-8 w-px bg-slate-700"></div>
@@ -623,7 +626,10 @@ const RemindersView = () => {
                     <span className="text-purple-400 text-[10px] font-bold flex items-center gap-1 uppercase mt-1"><Brain className="w-3 h-3"/> Generated</span>
                 </div>
             </div>
-            <button onClick={() => setAlarms(alarms.filter(a => a.id !== alarm.id))} className="p-3 text-slate-500 hover:text-red-400 bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors"><Trash2 className="w-5 h-5" /></button>
+            <div className="flex items-center gap-3">
+                <div className={`w-3 h-3 rounded-full ${alarm.isActive ? 'bg-green-500 animate-pulse' : 'bg-slate-600'}`}></div>
+                <button onClick={() => setAlarms(alarms.filter(a => a.id !== alarm.id))} className="p-3 text-slate-500 hover:text-red-400 bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors"><Trash2 className="w-5 h-5" /></button>
+            </div>
           </div>
         ))}
       </div>
@@ -638,7 +644,7 @@ const RemindersView = () => {
                  src={ASSETS.mascot} 
                  className="w-full h-full rounded-full border-4 border-slate-800 relative z-10 shadow-2xl bg-slate-800 object-cover" 
                  alt="Lucy" 
-                 onError={(e) => e.target.src = 'https://via.placeholder.com/150/3b82f6/ffffff?text=Lucy'} // Fallback if local image fails
+                 onError={(e) => e.target.src = 'https://via.placeholder.com/150/3b82f6/ffffff?text=Lucy'} 
                />
             </div>
             <h2 className="text-7xl font-bold text-white tracking-tighter mb-2">{ringingAlarm.time}</h2>
