@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Mic, Square, Play, Trash2, Plus, Bell, Volume2, VolumeX, Clock, X, 
   MessageCircle, Activity, Heart, Home, Settings, Check, ChevronRight, 
-  Sparkles, Brain, Loader, Fingerprint, ArrowRight, ShieldCheck, Info, Calendar, ChevronUp, ChevronDown
+  Sparkles, Brain, Loader, Fingerprint, ArrowRight, ShieldCheck, Info, Calendar, ChevronUp, ChevronDown, AlertTriangle
 } from 'lucide-react';
 
 // --- ASSETS CONFIGURATION ---
@@ -30,12 +30,38 @@ const getSavedStage = () => {
 };
 
 // --- HELPER: AUDIO UNLOCKER ---
+// Essential for Mobile Safari/Chrome to allow audio playback later
 const unlockAudioContext = () => {
   const AudioContext = window.AudioContext || window.webkitAudioContext;
   if (AudioContext) {
     const ctx = new AudioContext();
     if (ctx.state === 'suspended') ctx.resume();
+    // Play a silent buffer to prime the audio pipeline
+    const buffer = ctx.createBuffer(1, 1, 22050);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.start(0);
   }
+};
+
+// --- HELPER: WAKE LOCK ---
+// Keeps screen on so alarms trigger reliably
+const useWakeLock = () => {
+  useEffect(() => {
+    let wakeLock = null;
+    const requestWakeLock = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await navigator.wakeLock.request('screen');
+        }
+      } catch (err) {
+        console.log('Wake Lock error:', err);
+      }
+    };
+    requestWakeLock();
+    return () => wakeLock?.release();
+  }, []);
 };
 
 // --- COMPONENT: TIME PICKER ---
@@ -101,7 +127,7 @@ const TimePicker = ({ value, onChange }) => {
 
 // --- COMPONENT: NAVIGATION BAR ---
 const NavBar = ({ activeTab, setActiveTab }) => (
-  <div className="fixed bottom-0 left-0 right-0 bg-slate-900/90 backdrop-blur-xl border-t border-white/10 p-2 pb-6 flex justify-around items-center z-50 safe-area-pb shadow-2xl">
+  <div className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-xl border-t border-white/10 p-2 pb-6 flex justify-around items-center z-50 safe-area-pb shadow-2xl">
     <NavBtn id="home" icon={Home} label="Home" active={activeTab} set={setActiveTab} />
     <NavBtn id="voice-lab" icon={Fingerprint} label="Voice Lab" active={activeTab} set={setActiveTab} />
     <NavBtn id="lucy" icon={MessageCircle} label="Lucy AI" active={activeTab} set={setActiveTab} />
@@ -140,7 +166,7 @@ const SettingsModal = ({ isOpen, onClose, onUpdate }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-200 p-4">
       <div className="bg-slate-900 p-6 rounded-3xl border border-slate-700 w-full max-w-sm space-y-6 shadow-2xl transform transition-all scale-100">
         <div className="flex justify-between items-center border-b border-slate-800 pb-4">
           <h2 className="text-xl font-bold text-white">SoberTone Engine</h2>
@@ -148,6 +174,13 @@ const SettingsModal = ({ isOpen, onClose, onUpdate }) => {
         </div>
         
         <div className="space-y-4">
+          <div className="bg-blue-500/10 p-3 rounded-lg border border-blue-500/20">
+            <p className="text-xs text-blue-200 flex gap-2">
+              <Info className="w-4 h-4 shrink-0" />
+              Enter keys here to enable Real AI & Voice features.
+            </p>
+          </div>
+
           <div className="space-y-2">
             <label className="text-xs text-cyan-400 font-bold uppercase tracking-wider flex items-center gap-2">
               <Calendar className="w-3 h-3" /> Sobriety Start Date
@@ -201,27 +234,57 @@ const SettingsModal = ({ isOpen, onClose, onUpdate }) => {
 // --- COMPONENT: VOICE LAB ---
 const VoiceLabView = () => {
   const [isRecording, setIsRecording] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [isTraining, setIsTraining] = useState(false);
   const [voiceModel, setVoiceModel] = useState(localStorage.getItem('sobertone_voice_model') ? JSON.parse(localStorage.getItem('sobertone_voice_model')) : null);
+  const [audioBlob, setAudioBlob] = useState(null);
+  
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
 
-  const startTraining = () => {
-    setIsTraining(true);
-    let p = 0;
-    const interval = setInterval(() => {
-      p += Math.random() * 15;
-      if (p > 100) {
-        p = 100;
-        clearInterval(interval);
-        setTimeout(() => {
-          setIsTraining(false);
-          const mockModel = { id: 'cloned-voice-1', name: "Mom's Voice (AI)", date: new Date().toLocaleDateString() };
-          setVoiceModel(mockModel);
-          localStorage.setItem('sobertone_voice_model', JSON.stringify(mockModel));
-        }, 800);
-      }
-      setProgress(p);
-    }, 300);
+  // REAL Recording Logic
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+
+      mediaRecorderRef.current.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+      };
+
+      mediaRecorderRef.current.onstop = () => {
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+        setAudioBlob(blob);
+        // Simulate "Saving" the model
+        const mockModel = { id: 'cloned-voice-1', name: "Mom's Voice (AI)", date: new Date().toLocaleDateString() };
+        setVoiceModel(mockModel);
+        localStorage.setItem('sobertone_voice_model', JSON.stringify(mockModel));
+        
+        // Stop all tracks
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorderRef.current.start();
+      setIsRecording(true);
+    } catch (err) {
+      alert("Microphone access needed.");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const playRecording = () => {
+    if (audioBlob) {
+      const url = URL.createObjectURL(audioBlob);
+      new Audio(url).play();
+    } else {
+      // Fallback demo sound if user refreshed page
+      alert("Preview unavailable after refresh in Demo mode.");
+    }
   };
 
   return (
@@ -235,6 +298,7 @@ const VoiceLabView = () => {
 
       {!voiceModel ? (
         <div className="space-y-6">
+          {/* Instructions */}
           <div className="bg-gradient-to-br from-slate-800 to-slate-900 p-5 rounded-3xl border border-slate-700/50 shadow-xl">
             <div className="flex items-start gap-4 mb-4">
               <div className="w-10 h-10 bg-cyan-500/10 rounded-full flex items-center justify-center flex-shrink-0">
@@ -247,9 +311,9 @@ const VoiceLabView = () => {
             </div>
             <div className="space-y-3">
               {[
-                "Find a quiet room with no echo.",
-                "Press record and read the script below.",
-                "Speak naturally, as if talking to a friend."
+                "Find a quiet room.",
+                "Press mic to start. Press again to stop.",
+                "Speak naturally, reading the script below."
               ].map((step, i) => (
                 <div key={i} className="flex items-center gap-3 text-sm text-slate-300 bg-slate-950/30 p-3 rounded-xl border border-white/5">
                   <span className="w-5 h-5 rounded-full bg-slate-700 flex items-center justify-center text-[10px] font-bold text-white">{i+1}</span>
@@ -259,37 +323,21 @@ const VoiceLabView = () => {
             </div>
           </div>
 
+          {/* Recorder */}
           <div className="bg-slate-800 p-8 rounded-[2rem] border border-slate-700 text-center space-y-8 relative overflow-hidden shadow-2xl">
-            {isTraining && (
-              <div className="absolute inset-0 bg-slate-900/95 z-20 flex flex-col items-center justify-center p-8 backdrop-blur-sm">
-                <div className="relative w-24 h-24 mb-6">
-                  <div className="absolute inset-0 border-4 border-slate-700 rounded-full"></div>
-                  <div className="absolute inset-0 border-t-4 border-cyan-500 rounded-full animate-spin"></div>
-                  <Brain className="absolute inset-0 m-auto w-8 h-8 text-cyan-400 animate-pulse" />
-                </div>
-                <h3 className="text-white font-bold text-2xl mb-2">Synthesizing</h3>
-                <p className="text-cyan-400 font-mono text-sm">{Math.round(progress)}% COMPLETE</p>
-              </div>
-            )}
-
             <div className="relative">
               {isRecording && (
                 <div className="absolute inset-0 bg-red-500/20 blur-3xl rounded-full animate-pulse"></div>
               )}
               <button 
-                onClick={() => {
-                  if (!isRecording) {
-                    setIsRecording(true);
-                    setTimeout(() => { setIsRecording(false); startTraining(); }, 3000);
-                  }
-                }}
+                onClick={isRecording ? stopRecording : startRecording}
                 className={`relative z-10 w-24 h-24 mx-auto rounded-full flex items-center justify-center border-4 transition-all duration-500 ${
                   isRecording 
                   ? 'bg-red-500 border-red-400 scale-110 shadow-[0_0_40px_rgba(239,68,68,0.4)]' 
                   : 'bg-gradient-to-b from-slate-700 to-slate-800 border-slate-600 hover:border-cyan-500 shadow-xl'
                 }`}
               >
-                <Mic className={`w-10 h-10 ${isRecording ? 'text-white' : 'text-slate-400'}`} />
+                {isRecording ? <Square className="w-8 h-8 text-white fill-current" /> : <Mic className="w-10 h-10 text-slate-400" />}
               </button>
             </div>
             
@@ -299,6 +347,8 @@ const VoiceLabView = () => {
                 "I believe in you. No matter how hard it gets, remember that you are loved and you are strong enough to get through this."
               </p>
             </div>
+            
+            <p className="text-xs text-slate-500">{isRecording ? "Recording... Tap to Stop" : "Tap mic to start"}</p>
           </div>
         </div>
       ) : (
@@ -323,14 +373,9 @@ const VoiceLabView = () => {
           <div className="bg-slate-950/50 p-5 rounded-2xl border border-slate-800">
             <div className="flex justify-between items-center mb-3">
                 <p className="text-xs text-slate-500 uppercase font-bold">Voice DNA</p>
-                <div className="flex gap-1">
-                    <div className="w-1 h-1 bg-cyan-500 rounded-full"></div>
-                    <div className="w-1 h-1 bg-cyan-500 rounded-full"></div>
-                    <div className="w-1 h-1 bg-cyan-500 rounded-full"></div>
-                </div>
             </div>
             <div className="flex items-center gap-4">
-              <button className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-cyan-400 hover:bg-slate-700 hover:text-white transition-all border border-slate-700">
+              <button onClick={playRecording} className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-cyan-400 hover:bg-slate-700 hover:text-white transition-all border border-slate-700">
                 <Play className="w-5 h-5 fill-current ml-1" />
               </button>
               <div className="h-10 flex-1 flex items-center gap-[3px] opacity-60">
@@ -344,7 +389,7 @@ const VoiceLabView = () => {
             </div>
           </div>
 
-          <button onClick={() => { setVoiceModel(null); localStorage.removeItem('sobertone_voice_model'); }} className="w-full py-4 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm font-medium">
+          <button onClick={() => { setVoiceModel(null); setAudioBlob(null); localStorage.removeItem('sobertone_voice_model'); }} className="w-full py-4 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm font-medium">
             <Trash2 className="w-4 h-4" /> Delete Model
           </button>
         </div>
@@ -386,21 +431,32 @@ const LucyChatView = () => {
     setIsThinking(true);
     try {
       const keyToUse = CONFIG.geminiKey;
+      
       if (!keyToUse) {
+        // Provide helpful fallback responses if no key
         await new Promise(resolve => setTimeout(resolve, 1500));
-        finishResponse("I hear you. It takes strength to share that. I'm here with you every step of the way.");
+        const responses = [
+            "I hear you. Since I'm in Demo Mode (no API key), I can only give limited responses, but I want you to know you matter.",
+            "That sounds important. Please add a Gemini API Key in Settings so I can fully understand and reply to you.",
+            "You are strong for sharing that. I am here for you."
+        ];
+        const randomResp = responses[Math.floor(Math.random() * responses.length)];
+        finishResponse(randomResp);
         return;
       }
-      // Using standard gemini-1.5-flash for broader key compatibility
+
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${keyToUse}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ contents: [{ parts: [{ text: `You are Lucy, an empathetic AI addiction recovery companion. Be supportive, gentle, and concise. User: "${userText}"` }] }] })
       });
+      
+      if (!response.ok) throw new Error("API Error");
+      
       const data = await response.json();
       finishResponse(data.candidates?.[0]?.content?.parts?.[0]?.text || "I'm here for you.");
     } catch (error) {
       console.error(error);
-      finishResponse("I'm having trouble connecting, but please know I'm here for you.");
+      finishResponse("I'm having trouble connecting (check your API Key), but please know I'm here for you.");
     }
   };
 
@@ -450,6 +506,12 @@ const LucyChatView = () => {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar pb-4">
+        {!CONFIG.geminiKey && (
+            <div className="bg-yellow-500/10 border border-yellow-500/20 p-4 rounded-xl flex items-start gap-3 text-yellow-200 text-xs">
+                <AlertTriangle className="w-5 h-5 shrink-0" />
+                <p>Demo Mode: AI Brain is inactive. Add a free Gemini API Key in Settings to enable real conversations.</p>
+            </div>
+        )}
         {messages.map(msg => (
           <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
             {msg.sender === 'lucy' && <img src={ASSETS.mascot} className="w-8 h-8 rounded-full mr-2 self-end mb-1 border border-slate-700" onError={(e) => e.target.style.display = 'none'} />}
@@ -542,6 +604,7 @@ const RemindersView = () => {
   const triggerAlarm = (alarm) => {
     setRingingAlarm(alarm);
     
+    // Stop existing
     if (audioPlayerRef.current) {
         audioPlayerRef.current.pause();
         audioPlayerRef.current.currentTime = 0;
@@ -550,10 +613,12 @@ const RemindersView = () => {
     if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
 
     if (alarm.audioUrl) {
+      // Real Voice (ElevenLabs)
       audioPlayerRef.current = new Audio(alarm.audioUrl);
       audioPlayerRef.current.loop = true;
       audioPlayerRef.current.play().catch(console.error);
     } else {
+      // Fallback Voice (System TTS) - Loop handled manually
       window.activeAlarmId = alarm.id;
       const u = new SpeechSynthesisUtterance(alarm.text);
       u.rate = 0.9;
@@ -572,15 +637,16 @@ const RemindersView = () => {
   };
 
   const stopAlarm = () => {
+    // Stop everything immediately
     if (audioPlayerRef.current) {
       audioPlayerRef.current.pause();
       audioPlayerRef.current.currentTime = 0;
     }
-    
     window.activeAlarmId = null; 
     window.speechSynthesis.cancel(); 
     if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
     
+    // Turn off alarm so it doesn't ring again this minute
     if (ringingAlarm) {
         setAlarms(prev => prev.map(a => 
             a.id === ringingAlarm.id ? { ...a, isActive: false } : a
@@ -736,6 +802,8 @@ const SobertoneApp = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [soberDays, setSoberDays] = useState(0);
   const [stageScore, setStageScore] = useState(null);
+
+  useWakeLock();
 
   const refreshData = () => {
     setSoberDays(getDaysSober());
