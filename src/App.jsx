@@ -32,13 +32,11 @@ const getSavedStage = () => {
 };
 
 // --- HELPER: AUDIO UNLOCKER ---
-// Essential for Mobile Safari/Chrome to allow audio playback later
 const unlockAudioContext = () => {
   const AudioContext = window.AudioContext || window.webkitAudioContext;
   if (AudioContext) {
     const ctx = new AudioContext();
     if (ctx.state === 'suspended') ctx.resume();
-    // Play a silent buffer to prime the audio pipeline
     const buffer = ctx.createBuffer(1, 1, 22050);
     const source = ctx.createBufferSource();
     source.buffer = buffer;
@@ -48,7 +46,6 @@ const unlockAudioContext = () => {
 };
 
 // --- HELPER: WAKE LOCK ---
-// Keeps screen on so alarms trigger reliably
 const useWakeLock = () => {
   useEffect(() => {
     let wakeLock = null;
@@ -61,7 +58,6 @@ const useWakeLock = () => {
         console.log('Wake Lock error:', err);
       }
     };
-    // Re-request wake lock if visibility changes (user switches apps)
     const handleVisibilityChange = () => {
         if (document.visibilityState === 'visible') requestWakeLock();
     };
@@ -113,20 +109,17 @@ const TimePicker = ({ value, onChange }) => {
 
   return (
     <div className="flex items-center justify-center gap-2 bg-slate-950 p-4 rounded-2xl border border-slate-800 shadow-inner" onClick={(e) => e.stopPropagation()}>
-      {/* Hours */}
       <div className="flex flex-col items-center">
         <button onClick={() => cycle('h', 12, 1)} className="p-2 text-slate-500 hover:text-cyan-400 active:scale-90 transition-transform"><ChevronUp className="w-5 h-5"/></button>
         <div className="text-4xl font-bold text-white w-20 text-center tabular-nums font-mono">{time.h.toString().padStart(2, '0')}</div>
         <button onClick={() => cycleDown('h', 12, 1)} className="p-2 text-slate-500 hover:text-cyan-400 active:scale-90 transition-transform"><ChevronDown className="w-5 h-5"/></button>
       </div>
       <div className="text-4xl font-bold text-slate-600 mb-1 animate-pulse">:</div>
-      {/* Minutes */}
       <div className="flex flex-col items-center">
         <button onClick={() => cycle('m', 59)} className="p-2 text-slate-500 hover:text-cyan-400 active:scale-90 transition-transform"><ChevronUp className="w-5 h-5"/></button>
         <div className="text-4xl font-bold text-white w-20 text-center tabular-nums font-mono">{time.m.toString().padStart(2, '0')}</div>
         <button onClick={() => cycleDown('m', 59)} className="p-2 text-slate-500 hover:text-cyan-400 active:scale-90 transition-transform"><ChevronDown className="w-5 h-5"/></button>
       </div>
-      {/* AM/PM */}
       <div className="ml-4 flex flex-col gap-2">
         <button onClick={() => setTime(p => ({...p, ampm: 'AM'}))} className={`text-xs font-bold px-4 py-2 rounded-xl transition-all ${time.ampm === 'AM' ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-500/20' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'}`}>AM</button>
         <button onClick={() => setTime(p => ({...p, ampm: 'PM'}))} className={`text-xs font-bold px-4 py-2 rounded-xl transition-all ${time.ampm === 'PM' ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/20' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'}`}>PM</button>
@@ -168,7 +161,6 @@ const SettingsModal = ({ isOpen, onClose, onUpdate }) => {
   if (!isOpen) return null;
 
   const handleSave = () => {
-    // TRIM WHITESPACE - Crucial fix for mobile copy/paste
     localStorage.setItem('sobertone_el_key', elKey.trim());
     localStorage.setItem('sobertone_gemini_key', gKey.trim());
     localStorage.setItem('sobertone_start_date', soberDate);
@@ -251,7 +243,6 @@ const VoiceLabView = () => {
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
 
-  // REAL Recording Logic
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -265,12 +256,9 @@ const VoiceLabView = () => {
       mediaRecorderRef.current.onstop = () => {
         const blob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
         setAudioBlob(blob);
-        // Simulate "Saving" the model
         const mockModel = { id: 'cloned-voice-1', name: "Mom's Voice (AI)", date: new Date().toLocaleDateString() };
         setVoiceModel(mockModel);
         localStorage.setItem('sobertone_voice_model', JSON.stringify(mockModel));
-        
-        // Stop all tracks
         stream.getTracks().forEach(track => track.stop());
       };
 
@@ -308,7 +296,6 @@ const VoiceLabView = () => {
 
       {!voiceModel ? (
         <div className="space-y-6">
-          {/* Instructions */}
           <div className="bg-gradient-to-br from-slate-800 to-slate-900 p-5 rounded-3xl border border-slate-700/50 shadow-xl">
             <div className="flex items-start gap-4 mb-4">
               <div className="w-10 h-10 bg-cyan-500/10 rounded-full flex items-center justify-center flex-shrink-0">
@@ -320,11 +307,7 @@ const VoiceLabView = () => {
               </div>
             </div>
             <div className="space-y-3">
-              {[
-                "Find a quiet room.",
-                "Press mic to start. Press again to stop.",
-                "Speak naturally, reading the script below."
-              ].map((step, i) => (
+              {["Find a quiet room.", "Press mic to start. Press again to stop.", "Speak naturally, reading the script below."].map((step, i) => (
                 <div key={i} className="flex items-center gap-3 text-sm text-slate-300 bg-slate-950/30 p-3 rounded-xl border border-white/5">
                   <span className="w-5 h-5 rounded-full bg-slate-700 flex items-center justify-center text-[10px] font-bold text-white">{i+1}</span>
                   {step}
@@ -333,75 +316,38 @@ const VoiceLabView = () => {
             </div>
           </div>
 
-          {/* Recorder */}
           <div className="bg-slate-800 p-8 rounded-[2rem] border border-slate-700 text-center space-y-8 relative overflow-hidden shadow-2xl">
             <div className="relative">
-              {isRecording && (
-                <div className="absolute inset-0 bg-red-500/20 blur-3xl rounded-full animate-pulse"></div>
-              )}
-              <button 
-                onClick={isRecording ? stopRecording : startRecording}
-                className={`relative z-10 w-24 h-24 mx-auto rounded-full flex items-center justify-center border-4 transition-all duration-500 ${
-                  isRecording 
-                  ? 'bg-red-500 border-red-400 scale-110 shadow-[0_0_40px_rgba(239,68,68,0.4)]' 
-                  : 'bg-gradient-to-b from-slate-700 to-slate-800 border-slate-600 hover:border-cyan-500 shadow-xl'
-                }`}
-              >
+              {isRecording && <div className="absolute inset-0 bg-red-500/20 blur-3xl rounded-full animate-pulse"></div>}
+              <button onClick={isRecording ? stopRecording : startRecording} className={`relative z-10 w-24 h-24 mx-auto rounded-full flex items-center justify-center border-4 transition-all duration-500 ${isRecording ? 'bg-red-500 border-red-400 scale-110' : 'bg-gradient-to-b from-slate-700 to-slate-800 border-slate-600 hover:border-cyan-500 shadow-xl'}`}>
                 {isRecording ? <Square className="w-8 h-8 text-white fill-current" /> : <Mic className="w-10 h-10 text-slate-400" />}
               </button>
             </div>
-            
             <div className="text-left bg-slate-950/50 p-5 rounded-2xl border border-white/5">
               <p className="text-slate-500 text-xs uppercase font-bold mb-2 tracking-wider">Script</p>
-              <p className="text-slate-200 italic text-lg font-serif leading-relaxed">
-                "I believe in you. No matter how hard it gets, remember that you are loved and you are strong enough to get through this."
-              </p>
+              <p className="text-slate-200 italic text-lg font-serif leading-relaxed">"I believe in you. No matter how hard it gets, remember that you are loved and you are strong enough to get through this."</p>
             </div>
-            
             <p className="text-xs text-slate-500">{isRecording ? "Recording... Tap to Stop" : "Tap mic to start"}</p>
           </div>
         </div>
       ) : (
         <div className="bg-gradient-to-br from-cyan-900/40 to-slate-900 p-8 rounded-[2rem] border border-cyan-500/30 space-y-6 animate-in zoom-in duration-500 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl -mr-20 -mt-20"></div>
-          
           <div className="flex flex-col gap-4 relative z-10">
-            <div className="w-16 h-16 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-cyan-900/20">
-              <Fingerprint className="w-8 h-8 text-white" />
-            </div>
+            <div className="w-16 h-16 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-cyan-900/20"><Fingerprint className="w-8 h-8 text-white" /></div>
             <div>
               <h3 className="text-2xl font-bold text-white">{voiceModel.name}</h3>
-              <div className="flex items-center gap-2 mt-2">
-                <span className="bg-green-500/20 text-green-400 text-xs px-2 py-1 rounded-md font-bold uppercase tracking-wider flex items-center gap-1 border border-green-500/20">
-                  <Check className="w-3 h-3" /> Active
-                </span>
-                <span className="text-slate-500 text-xs">{voiceModel.date}</span>
-              </div>
+              <div className="flex items-center gap-2 mt-2"><span className="bg-green-500/20 text-green-400 text-xs px-2 py-1 rounded-md font-bold uppercase tracking-wider flex items-center gap-1 border border-green-500/20"><Check className="w-3 h-3" /> Active</span><span className="text-slate-500 text-xs">{voiceModel.date}</span></div>
             </div>
           </div>
-          
           <div className="bg-slate-950/50 p-5 rounded-2xl border border-slate-800">
-            <div className="flex justify-between items-center mb-3">
-                <p className="text-xs text-slate-500 uppercase font-bold">Voice DNA</p>
-            </div>
+            <div className="flex justify-between items-center mb-3"><p className="text-xs text-slate-500 uppercase font-bold">Voice DNA</p></div>
             <div className="flex items-center gap-4">
-              <button onClick={playRecording} className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-cyan-400 hover:bg-slate-700 hover:text-white transition-all border border-slate-700">
-                <Play className="w-5 h-5 fill-current ml-1" />
-              </button>
-              <div className="h-10 flex-1 flex items-center gap-[3px] opacity-60">
-                {[...Array(25)].map((_,i) => (
-                  <div key={i} className="w-1.5 bg-cyan-400 rounded-full transition-all duration-1000 animate-pulse" style={{
-                    height: `${30 + Math.random() * 70}%`,
-                    animationDelay: `${i * 0.05}s`
-                  }}></div>
-                ))}
-              </div>
+              <button onClick={playRecording} className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-cyan-400 hover:bg-slate-700 hover:text-white transition-all border border-slate-700"><Play className="w-5 h-5 fill-current ml-1" /></button>
+              <div className="h-10 flex-1 flex items-center gap-[3px] opacity-60">{[...Array(25)].map((_,i) => (<div key={i} className="w-1.5 bg-cyan-400 rounded-full transition-all duration-1000 animate-pulse" style={{height: `${30 + Math.random() * 70}%`, animationDelay: `${i * 0.05}s`}}></div>))}</div>
             </div>
           </div>
-
-          <button onClick={() => { setVoiceModel(null); setAudioBlob(null); localStorage.removeItem('sobertone_voice_model'); }} className="w-full py-4 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm font-medium">
-            <Trash2 className="w-4 h-4" /> Delete Model
-          </button>
+          <button onClick={() => { setVoiceModel(null); setAudioBlob(null); localStorage.removeItem('sobertone_voice_model'); }} className="w-full py-4 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm font-medium"><Trash2 className="w-4 h-4" /> Delete Model</button>
         </div>
       )}
     </div>
@@ -437,7 +383,7 @@ const LucyChatView = () => {
     window.speechSynthesis.speak(utterance);
   };
 
-  // AI LOGIC: ERROR REPORTING
+  // AI LOGIC: USING GEMINI-PRO
   const generateAIResponse = async (userText) => {
     setIsThinking(true);
     try {
@@ -448,7 +394,8 @@ const LucyChatView = () => {
         return;
       }
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${keyToUse}`, {
+      // CHANGED TO GEMINI-PRO for maximum compatibility
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${keyToUse}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ contents: [{ parts: [{ text: `You are Lucy, an empathetic AI addiction recovery companion. Be supportive, gentle, and concise. User: "${userText}"` }] }] })
       });
@@ -486,24 +433,13 @@ const LucyChatView = () => {
         <div className="flex items-center gap-4">
           <div className="relative">
             <div className={`w-12 h-12 rounded-full p-[2px] ${isSpeaking ? 'animate-pulse bg-cyan-400' : 'bg-gradient-to-br from-cyan-400 to-purple-500'}`}>
-              <img 
-                src={ASSETS.mascot} 
-                className="w-full h-full rounded-full object-cover bg-slate-800" 
-                alt="Lucy" 
-                onError={(e) => { e.target.onerror = null; e.target.style.display = 'none'; e.target.parentNode.classList.add('bg-cyan-500'); }}
-              />
+              <img src={ASSETS.mascot} className="w-full h-full rounded-full object-cover bg-slate-800" alt="Lucy" onError={(e) => { e.target.onerror = null; e.target.style.display = 'none'; e.target.parentNode.classList.add('bg-cyan-500'); }} />
             </div>
-            {isSpeaking && (
-              <div className="absolute -bottom-1 -right-1 bg-green-500 text-slate-900 rounded-full p-1 border-2 border-slate-900">
-                <Volume2 className="w-3 h-3" />
-              </div>
-            )}
+            {isSpeaking && <div className="absolute -bottom-1 -right-1 bg-green-500 text-slate-900 rounded-full p-1 border-2 border-slate-900"><Volume2 className="w-3 h-3" /></div>}
           </div>
           <div>
             <h3 className="font-bold text-white text-lg">Lucy</h3>
-            <p className="text-xs text-cyan-400 flex items-center gap-1 font-medium">
-              <Sparkles className="w-3 h-3" /> AI Companion
-            </p>
+            <p className="text-xs text-cyan-400 flex items-center gap-1 font-medium"><Sparkles className="w-3 h-3" /> AI Companion</p>
           </div>
         </div>
         <button onClick={() => { setVoiceEnabled(!voiceEnabled); window.speechSynthesis.cancel(); }} className={`p-3 rounded-xl transition-colors ${voiceEnabled ? 'bg-cyan-500/10 text-cyan-400' : 'bg-slate-800 text-slate-500'}`}>
@@ -521,11 +457,7 @@ const LucyChatView = () => {
         {messages.map(msg => (
           <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
             {msg.sender === 'lucy' && <img src={ASSETS.mascot} className="w-8 h-8 rounded-full mr-2 self-end mb-1 border border-slate-700" onError={(e) => e.target.style.display = 'none'} />}
-            <div className={`max-w-[80%] p-4 rounded-2xl text-sm leading-relaxed shadow-md ${
-              msg.sender === 'user' 
-                ? 'bg-gradient-to-br from-cyan-600 to-blue-600 text-white rounded-tr-none' 
-                : 'bg-slate-800 text-slate-200 rounded-tl-none border border-slate-700'
-            }`}>
+            <div className={`max-w-[80%] p-4 rounded-2xl text-sm leading-relaxed shadow-md ${msg.sender === 'user' ? 'bg-gradient-to-br from-cyan-600 to-blue-600 text-white rounded-tr-none' : 'bg-slate-800 text-slate-200 rounded-tl-none border border-slate-700'}`}>
               {msg.text}
             </div>
           </div>
@@ -544,16 +476,8 @@ const LucyChatView = () => {
       </div>
 
       <form onSubmit={sendMessage} className="p-4 bg-slate-900 border-t border-slate-800 flex gap-3 pb-6">
-        <input 
-          type="text" 
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Type message to Lucy..."
-          className="flex-1 bg-slate-950 border border-slate-700 rounded-2xl px-5 py-4 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none placeholder:text-slate-600"
-        />
-        <button type="submit" disabled={!input.trim() || isThinking} className="bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-900 p-4 rounded-2xl transition-all shadow-lg shadow-cyan-500/20">
-          <ArrowRight className="w-6 h-6" strokeWidth={3} />
-        </button>
+        <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Type message to Lucy..." className="flex-1 bg-slate-950 border border-slate-700 rounded-2xl px-5 py-4 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none placeholder:text-slate-600" />
+        <button type="submit" disabled={!input.trim() || isThinking} className="bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-900 p-4 rounded-2xl transition-all shadow-lg shadow-cyan-500/20"><ArrowRight className="w-6 h-6" strokeWidth={3} /></button>
       </form>
     </div>
   );
@@ -575,12 +499,7 @@ const RemindersView = () => {
       const h24 = now.getHours().toString().padStart(2, '0');
       const m = now.getMinutes().toString().padStart(2, '0');
       const currentTime = `${h24}:${m}`;
-      
-      alarms.forEach(a => { 
-        if (a.isActive && a.time === currentTime && !ringingAlarm) {
-            triggerAlarm(a); 
-        }
-      });
+      alarms.forEach(a => { if (a.isActive && a.time === currentTime && !ringingAlarm) triggerAlarm(a); });
     }, 1000);
     return () => clearInterval(interval);
   }, [alarms, ringingAlarm]);
@@ -702,12 +621,7 @@ const RemindersView = () => {
             <div className="w-40 h-40 mx-auto mb-8 relative">
                <div className="absolute inset-0 bg-cyan-500/30 rounded-full animate-ping"></div>
                <div className="absolute inset-0 bg-purple-500/30 rounded-full animate-ping" style={{animationDelay: '0.5s'}}></div>
-               <img 
-                 src={ASSETS.mascot} 
-                 className="w-full h-full rounded-full border-4 border-slate-800 relative z-10 shadow-2xl bg-slate-800 object-cover" 
-                 alt="Lucy" 
-                 onError={(e) => e.target.src = 'https://via.placeholder.com/150/3b82f6/ffffff?text=Lucy'} 
-               />
+               <img src={ASSETS.mascot} className="w-full h-full rounded-full border-4 border-slate-800 relative z-10 shadow-2xl bg-slate-800 object-cover" alt="Lucy" onError={(e) => e.target.src = 'https://via.placeholder.com/150/3b82f6/ffffff?text=Lucy'} />
             </div>
             <h2 className="text-7xl font-bold text-white tracking-tighter mb-2">{ringingAlarm.time}</h2>
             <div className="bg-slate-800/50 p-6 rounded-3xl border border-white/10 backdrop-blur-md mb-8">
