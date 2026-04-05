@@ -387,17 +387,17 @@ const LucyChatView = () => {
   // AI LOGIC: USING GEMINI 2.5 FLASH (Updated for your key)
   const generateAIResponse = async (userText) => {
     setIsThinking(true);
+  
     try {
       const keyToUse = CONFIG.geminiKey;
+  
       if (!keyToUse) {
         await new Promise(resolve => setTimeout(resolve, 1500));
         finishResponse("I can't connect to my brain. Please add a valid Gemini API Key in Settings.");
         return;
       }
-
-      // --- UPDATED MODEL NAME ---
-      // Use the exact model from your screenshot: gemini-2.5-flash-preview-09-2025
-      let response = await fetch(
+  
+      const response = await fetch(
         `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${keyToUse}`,
         {
           method: "POST",
@@ -415,21 +415,23 @@ const LucyChatView = () => {
           })
         }
       );
-      
-      }
-
+  
       if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(`API Error ${response.status}: ${errorData.error?.message || response.statusText}`);
+        const errorText = await response.text();
+        throw new Error(`API Error ${response.status}: ${errorText}`);
       }
-      
+  
       const data = await response.json();
-      finishResponse(data.candidates?.[0]?.content?.parts?.[0]?.text || "I'm listening.");
-    } catch (error) {
-      console.error(error);
-      finishResponse(`Connection Error: ${error.message}. Please check your API Key.`);
-    }
-  };
+  
+      finishResponse(
+        data?.candidates?.[0]?.content?.parts?.[0]?.text || "I'm here for you."
+      );
+
+  } catch (error) {
+    console.error(error);
+    finishResponse(`Connection Error: ${error.message}`);
+  }
+};
 
   const finishResponse = (text) => {
     setMessages(prev => [...prev, { id: Date.now(), sender: 'lucy', text }]);
