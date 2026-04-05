@@ -397,18 +397,25 @@ const LucyChatView = () => {
 
       // --- UPDATED MODEL NAME ---
       // Use the exact model from your screenshot: gemini-2.5-flash-preview-09-2025
-      let response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${keyToUse}`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: [{ parts: [{ text: `You are Lucy, an empathetic AI addiction recovery companion. Be supportive, gentle, and concise. User: "${userText}"` }] }] })
-      });
+      let response = await fetch(
+        `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${keyToUse}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    text: `You are Lucy, an empathetic AI addiction recovery companion. Be supportive, gentle, and concise. User: "${userText}"`
+                  }
+                ]
+              }
+            ]
+          })
+        }
+      );
       
-      // Fallback: If 2.5 fails, try 1.5 Flash (Stable)
-      if (!response.ok) {
-          console.warn("Gemini 2.5 failed, trying 1.5 Flash...");
-          response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${keyToUse}`, {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ contents: [{ parts: [{ text: `You are Lucy, an empathetic AI addiction recovery companion. Be supportive, gentle, and concise. User: "${userText}"` }] }] })
-          });
       }
 
       if (!response.ok) {
